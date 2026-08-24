@@ -221,10 +221,7 @@ func squareRootTargetScale(coefficient *big.Int, scale Scale, precision uint) (S
 	}
 	target.SetUint64(uint64(precision - 1))
 	target.Sub(&target, &rootExponent)
-	if !target.IsInt64() {
-		return 0, ErrRange
-	}
-	return Scale(target.Int64()), nil
+	return representableScale(&target)
 }
 
 // squareRootAtRangeLimit preserves exact roots when only the
@@ -243,22 +240,9 @@ func squareRootAtRangeLimit(x Decimal, precision uint, mode RoundingMode) (Decim
 // squareRootScaleShift determines which side of the radicand must receive a
 // power of ten so an integer root has the requested scale.
 func squareRootScaleShift(targetScale, scale Scale) coefficientScaleShift {
-	shift, ok := addScales(targetScale, targetScale)
-	if ok {
-		shift, ok = subtractScales(shift, scale)
-	}
-	if ok {
-		return coefficientScaleShift{
-			scaleNumerator: shift >= 0,
-			exponent:       scaleMagnitude(shift),
-			exponentFits:   true,
-		}
-	}
-
-	var shiftValue, component big.Int
-	shiftValue.SetInt64(int64(targetScale))
-	shiftValue.Lsh(&shiftValue, 1)
-	component.SetInt64(int64(scale))
-	shiftValue.Sub(&shiftValue, &component)
-	return coefficientScaleShiftFromBig(&shiftValue)
+	var shift scaleAccumulator
+	shift.add(targetScale)
+	shift.add(targetScale)
+	shift.sub(scale)
+	return shift.coefficientShift()
 }

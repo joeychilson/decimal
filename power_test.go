@@ -94,3 +94,16 @@ func TestPower_MatchesRepeatedMultiplicationAndRationals(t *testing.T) {
 		}
 	}
 }
+
+var (
+	powerBenchmarkDecimal Decimal
+	errPowerBenchmark     error
+)
+
+func BenchmarkPow(b *testing.B) {
+	x := MustParse("1.0000000000000000001")
+	b.ReportAllocs()
+	for b.Loop() {
+		powerBenchmarkDecimal, errPowerBenchmark = x.Pow(12)
+	}
+}

@@ -407,6 +407,92 @@ func addScales(x, y Scale) (Scale, bool) {
 	return x + y, true
 }
 
+// scaleAccumulator evaluates a linear scale expression without allocating
+// until fixed-width arithmetic overflows. Once promoted, it remains wide so
+// later terms may cancel the overflow before the final scale is validated.
+type scaleAccumulator struct {
+	small          Scale
+	promoted       bool
+	large, operand big.Int
+}
+
+func (a *scaleAccumulator) add(value Scale) {
+	if !a.promoted {
+		if sum, ok := addScales(a.small, value); ok {
+			a.small = sum
+			return
+		}
+		a.large.SetInt64(int64(a.small))
+		a.promoted = true
+	}
+	a.large.Add(&a.large, a.operand.SetInt64(int64(value)))
+}
+
+func (a *scaleAccumulator) sub(value Scale) {
+	if !a.promoted {
+		if difference, ok := subtractScales(a.small, value); ok {
+			a.small = difference
+			return
+		}
+		a.large.SetInt64(int64(a.small))
+		a.promoted = true
+	}
+	a.large.Sub(&a.large, a.operand.SetInt64(int64(value)))
+}
+
+func (a *scaleAccumulator) addUint64(value uint64) {
+	if value <= uint64(math.MaxInt64) {
+		a.add(Scale(value))
+		return
+	}
+	if !a.promoted {
+		a.large.SetInt64(int64(a.small))
+		a.promoted = true
+	}
+	a.large.Add(&a.large, a.operand.SetUint64(value))
+}
+
+func (a *scaleAccumulator) mulUint64(multiplier uint64) {
+	if !a.promoted {
+		if product, ok := multiplyScale(a.small, multiplier); ok {
+			a.small = product
+			return
+		}
+		a.large.SetInt64(int64(a.small))
+		a.promoted = true
+	}
+	a.large.Mul(&a.large, a.operand.SetUint64(multiplier))
+}
+
+func (a *scaleAccumulator) fitCoefficient(coefficient *big.Int) (Scale, error) {
+	if a.promoted {
+		return fitCoefficientScale(coefficient, &a.large)
+	}
+	return a.small, nil
+}
+
+func (a *scaleAccumulator) representableScale() (Scale, error) {
+	if !a.promoted {
+		return a.small, nil
+	}
+	return representableScale(&a.large)
+}
+
+func (a *scaleAccumulator) coefficientShift() coefficientScaleShift {
+	if !a.promoted {
+		return coefficientScaleShift{
+			scaleNumerator: a.small >= 0,
+			exponent:       scaleMagnitude(a.small),
+			exponentFits:   true,
+		}
+	}
+
+	// coefficientScaleShiftFromBig negates a negative shift in place.
+	var shift big.Int
+	shift.Set(&a.large)
+	return coefficientScaleShiftFromBig(&shift)
+}
+
 // fitCoefficientScale moves powers of ten between an owned coefficient and
 // its scale when the preferred scale lies outside Scale's range.
 func fitCoefficientScale(coefficient *big.Int, scale *big.Int) (Scale, error) {
@@ -447,6 +533,13 @@ func fitCoefficientScale(coefficient *big.Int, scale *big.Int) (Scale, error) {
 		return 0, ErrRange
 	}
 	return Scale(math.MaxInt64), nil
+}
+
+func representableScale(scale *big.Int) (Scale, error) {
+	if !scale.IsInt64() {
+		return 0, ErrRange
+	}
+	return Scale(scale.Int64()), nil
 }
 
 type coefficientScaleShift struct {

@@ -45,11 +45,10 @@ func powPositiveParts(d Decimal, exponent uint64) (*big.Int, Scale, error) {
 		return result, resultScale, nil
 	}
 
-	var resultScale, multiplier big.Int
-	resultScale.SetInt64(int64(scale))
-	multiplier.SetUint64(exponent)
-	resultScale.Mul(&resultScale, &multiplier)
-	fitted, err := fitCoefficientScale(result, &resultScale)
+	var resultScale scaleAccumulator
+	resultScale.add(scale)
+	resultScale.mulUint64(exponent)
+	fitted, err := resultScale.fitCoefficient(result)
 	return result, fitted, err
 }
 

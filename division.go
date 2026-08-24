@@ -263,16 +263,15 @@ type divisionAnalysis struct {
 // exactQuotient constructs a terminating quotient from prior division
 // analysis while preserving the operands' preferred scale.
 func exactQuotient(analysis *divisionAnalysis) (Decimal, error) {
-	var preferredScale, component big.Int
-	preferredScale.SetInt64(int64(analysis.dividendScale))
-	component.SetInt64(int64(analysis.divisorScale))
-	preferredScale.Sub(&preferredScale, &component)
+	var scale scaleAccumulator
+	scale.add(analysis.dividendScale)
+	scale.sub(analysis.divisorScale)
 	if analysis.numerator.Sign() == 0 {
-		scale, err := fitCoefficientScale(&analysis.numerator, &preferredScale)
+		resultScale, err := scale.fitCoefficient(&analysis.numerator)
 		if err != nil {
 			return Decimal{}, err
 		}
-		return makeDecimal(&analysis.numerator, scale), nil
+		return makeDecimal(&analysis.numerator, resultScale), nil
 	}
 	if !analysis.terminating {
 		return Decimal{}, ErrInexact
@@ -289,42 +288,23 @@ func exactQuotient(analysis *divisionAnalysis) (Decimal, error) {
 		factor.Exp(bigFive, &exponent, nil)
 		numerator.Mul(numerator, &factor)
 	}
-	var resultScale big.Int
-	resultScale.Set(&preferredScale)
-	component.SetUint64(digits)
-	resultScale.Add(&resultScale, &component)
-	scale, err := fitCoefficientScale(numerator, &resultScale)
+	scale.addUint64(digits)
+	resultScale, err := scale.fitCoefficient(numerator)
 	if err != nil {
 		return Decimal{}, err
 	}
-	return makeDecimal(numerator, scale), nil
+	return makeDecimal(numerator, resultScale), nil
 }
 
 // divisionTargetScale computes dividendScale-divisorScale-ratioExponent+
 // precision-1 and returns ErrRange when that scale is not representable.
 func divisionTargetScale(dividendScale, divisorScale Scale, ratioExponent int64, precision uint) (Scale, error) {
-	if uint64(precision-1) <= uint64(math.MaxInt64) {
-		preferred, preferredOK := subtractScales(dividendScale, divisorScale)
-		offset, offsetOK := subtractScales(Scale(precision-1), Scale(ratioExponent))
-		if preferredOK && offsetOK {
-			if target, ok := addScales(preferred, offset); ok {
-				return target, nil
-			}
-		}
-	}
-
-	var target, component big.Int
-	target.SetInt64(int64(dividendScale))
-	component.SetInt64(int64(divisorScale))
-	target.Sub(&target, &component)
-	component.SetInt64(ratioExponent)
-	target.Sub(&target, &component)
-	component.SetUint64(uint64(precision - 1))
-	target.Add(&target, &component)
-	if !target.IsInt64() {
-		return 0, ErrRange
-	}
-	return Scale(target.Int64()), nil
+	var target scaleAccumulator
+	target.add(dividendScale)
+	target.sub(divisorScale)
+	target.sub(Scale(ratioExponent))
+	target.addUint64(uint64(precision - 1))
+	return target.representableScale()
 }
 
 // divideCoefficientAtScale divides borrowed non-zero coefficient pairs at
@@ -388,23 +368,9 @@ func divideCoefficientAtScale(z *big.Int, dividend, divisor scaledCoefficient, s
 // divisionScaleShift determines which side of a coefficient ratio must be
 // multiplied by a power of ten to produce the requested quotient scale.
 func divisionScaleShift(dividend, divisor scaledCoefficient, scale Scale) coefficientScaleShift {
-	shift, ok := subtractScales(scale, dividend.scale)
-	if ok {
-		shift, ok = addScales(shift, divisor.scale)
-	}
-	if ok {
-		return coefficientScaleShift{
-			scaleNumerator: shift >= 0,
-			exponent:       scaleMagnitude(shift),
-			exponentFits:   true,
-		}
-	}
-
-	var shiftValue, component big.Int
-	shiftValue.SetInt64(int64(scale))
-	component.SetInt64(int64(divisor.scale))
-	shiftValue.Add(&shiftValue, &component)
-	component.SetInt64(int64(dividend.scale))
-	shiftValue.Sub(&shiftValue, &component)
-	return coefficientScaleShiftFromBig(&shiftValue)
+	var shift scaleAccumulator
+	shift.add(scale)
+	shift.add(divisor.scale)
+	shift.sub(dividend.scale)
+	return shift.coefficientShift()
 }

@@ -101,10 +101,9 @@ func multiplyParts(x, y Decimal) (*big.Int, Scale, error) {
 		return coefficient, scale, nil
 	}
 
-	var scale, component big.Int
-	scale.SetInt64(int64(xScale))
-	component.SetInt64(int64(yScale))
-	scale.Add(&scale, &component)
-	fitted, err := fitCoefficientScale(coefficient, &scale)
+	var scale scaleAccumulator
+	scale.add(xScale)
+	scale.add(yScale)
+	fitted, err := scale.fitCoefficient(coefficient)
 	return coefficient, fitted, err
 }

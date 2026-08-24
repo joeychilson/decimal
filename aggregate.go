@@ -38,33 +38,9 @@ func Product(values ...Decimal) (Decimal, error) {
 		scale.add(valueScale)
 		coefficient.Mul(coefficient, valueCoefficient)
 	}
-	if !scale.promoted {
-		return makeDecimal(coefficient, scale.small), nil
-	}
-	resultScale, err := fitCoefficientScale(coefficient, &scale.large)
+	resultScale, err := scale.fitCoefficient(coefficient)
 	if err != nil {
 		return Decimal{}, err
 	}
 	return makeDecimal(coefficient, resultScale), nil
-}
-
-// scaleAccumulator sums scales without allocating until fixed-width arithmetic
-// overflows. Once promoted, it remains wide so later operands may cancel the
-// overflow before the final scale is validated.
-type scaleAccumulator struct {
-	small          Scale
-	promoted       bool
-	large, operand big.Int
-}
-
-func (a *scaleAccumulator) add(value Scale) {
-	if !a.promoted {
-		if sum, ok := addScales(a.small, value); ok {
-			a.small = sum
-			return
-		}
-		a.large.SetInt64(int64(a.small))
-		a.promoted = true
-	}
-	a.large.Add(&a.large, a.operand.SetInt64(int64(value)))
 }

@@ -359,6 +359,23 @@ func TestContextDiv_HandlesExtremeScales(t *testing.T) {
 	}
 }
 
+func TestContextDiv_WorkingScaleAllowsIntermediateOverflow(t *testing.T) {
+	ctx := Context{Precision: 1, Rounding: HalfEven}
+	maximumScale := Scale(math.MaxInt64)
+	// The first scale subtraction overflows, but the ratio exponent brings the
+	// completed target back into range. Three keeps exact division from hiding
+	// an incorrect early ErrRange.
+	got, err := ctx.Div(New(100, maximumScale), New(3, -1))
+	want := New(3, maximumScale)
+	if err != nil || !got.SameRepresentation(want) {
+		t.Fatalf("intermediate overflow Div = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, want.Coefficient(), want.Scale())
+	}
+
+	if _, err := ctx.Div(New(1, maximumScale), New(1, -1)); !errors.Is(err, ErrRange) {
+		t.Fatalf("completed working-scale overflow error = %v, want ErrRange", err)
+	}
+}
+
 func TestContextDiv_UnlimitedRequiresExactResult(t *testing.T) {
 	if got, err := (Context{}).Div(FromInt(1), FromInt(8)); err != nil || got.String() != "0.125" {
 		t.Fatalf("unlimited Context.Div = %s, %v; want 0.125", got, err)
