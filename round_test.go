@@ -177,7 +177,16 @@ func TestIntegralRounding_UsesDocumentedDirections(t *testing.T) {
 func oracleRoundingIncrement(mode RoundingMode, sign, midpointComparison int, coefficient *big.Int) bool {
 	switch mode {
 	case HalfEven:
-		return midpointComparison > 0 || midpointComparison == 0 && coefficient.Bit(0) == 1
+		if midpointComparison != 0 {
+			return midpointComparison > 0
+		}
+		digits := coefficient.Text(10)
+		switch digits[len(digits)-1] {
+		case '1', '3', '5', '7', '9':
+			return true
+		default:
+			return false
+		}
 	case HalfUp:
 		return midpointComparison >= 0
 	case HalfDown:
@@ -191,8 +200,9 @@ func oracleRoundingIncrement(mode RoundingMode, sign, midpointComparison int, co
 	case Ceiling:
 		return sign > 0
 	case ZeroFiveUp:
-		lastDigit := new(big.Int).Abs(new(big.Int).Rem(new(big.Int).Set(coefficient), big.NewInt(10)))
-		return lastDigit.Sign() == 0 || lastDigit.Cmp(big.NewInt(5)) == 0
+		digits := coefficient.Text(10)
+		lastDigit := digits[len(digits)-1]
+		return lastDigit == '0' || lastDigit == '5'
 	case Exact:
 		panic("exact mode reached oracle rounding")
 	default:
