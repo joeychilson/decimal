@@ -11,11 +11,21 @@ import (
 )
 
 func TestConstructors_PreserveValuesScalesAndOwnership(t *testing.T) {
+	type SignedCoefficient int16
+	type UnsignedCoefficient uint64
+
 	if got := (Decimal{}).String(); got != "0" {
 		t.Fatalf("zero value String = %q", got)
 	}
 	if got := New(-12, -2).String(); got != "-12e2" {
 		t.Fatalf("negative scale String = %q", got)
+	}
+	if got := New(SignedCoefficient(-12), 2); !got.SameRepresentation(New(-12, 2)) {
+		t.Fatalf("named signed constructor = coefficient %s, scale %d", got.Coefficient(), got.Scale())
+	}
+	maximumUnsigned := New(UnsignedCoefficient(math.MaxUint64), 0)
+	if maximumUnsigned.Coefficient().Cmp(new(big.Int).SetUint64(math.MaxUint64)) != 0 {
+		t.Fatalf("named unsigned constructor coefficient = %s", maximumUnsigned.Coefficient())
 	}
 
 	coefficient := big.NewInt(123)

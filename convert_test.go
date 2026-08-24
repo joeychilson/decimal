@@ -79,8 +79,12 @@ func TestBigInt_PreservesExactValuesAndOwnership(t *testing.T) {
 
 func TestInt_PreservesExactValuesAndReportsLoss(t *testing.T) {
 	type Cents int32
+	type Units uint16
 	if got, err := MustParse("123.00").Int[Cents](); err != nil || got != 123 {
 		t.Fatalf("Int[Cents] = %d, %v", got, err)
+	}
+	if got, err := FromInt(math.MaxUint16).Int[Units](); err != nil || got != math.MaxUint16 {
+		t.Fatalf("Int[Units] = %d, %v", got, err)
 	}
 	if _, err := MustParse("1.5").Int[int](); !errors.Is(err, ErrInexact) {
 		t.Fatalf("fractional integer error = %v", err)

@@ -22,7 +22,6 @@ import (
 	"math"
 	"math/big"
 	"math/bits"
-	"reflect"
 )
 
 // Scale is the number of digits to the right of the decimal point. A negative
@@ -84,13 +83,11 @@ type Decimal struct {
 // declared by callers.
 func New[T Integer](coefficient T, scale Scale) Decimal {
 	var n big.Int
-	switch reflect.TypeFor[T]().Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	// The all-ones value is negative only for signed integer types.
+	if ^T(0) < T(0) {
 		n.SetInt64(int64(coefficient))
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+	} else {
 		n.SetUint64(uint64(coefficient))
-	default:
-		panic("decimal: unsupported integer type")
 	}
 	return makeDecimal(&n, scale)
 }

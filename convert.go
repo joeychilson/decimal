@@ -94,40 +94,32 @@ func (d Decimal) BigInt() (*big.Int, error) {
 //	n, err := cents.Int[Cents]()
 func (d Decimal) Int[T Integer]() (T, error) {
 	var zero T
-	typeOfT := reflect.TypeFor[T]()
 	integer, err := integerCoefficient(d)
 	if err != nil {
 		return zero, err
 	}
 
-	switch typeOfT.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	// The all-ones value is negative only for signed integer types.
+	if ^T(0) < T(0) {
 		if !integer.IsInt64() {
 			return zero, ErrRange
 		}
 		value := integer.Int64()
-		bits := typeOfT.Bits()
-		if bits < 64 {
-			minimum := -int64(1) << (bits - 1)
-			maximum := int64(1)<<(bits-1) - 1
-			if value < minimum || value > maximum {
-				return zero, ErrRange
-			}
-		}
-		return T(value), nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		if !integer.IsUint64() {
+		converted := T(value)
+		if int64(converted) != value {
 			return zero, ErrRange
 		}
-		value := integer.Uint64()
-		bits := typeOfT.Bits()
-		if bits < 64 && value > (uint64(1)<<bits)-1 {
-			return zero, ErrRange
-		}
-		return T(value), nil
-	default:
-		panic("decimal: unsupported integer type")
+		return converted, nil
 	}
+	if !integer.IsUint64() {
+		return zero, ErrRange
+	}
+	value := integer.Uint64()
+	converted := T(value)
+	if uint64(converted) != value {
+		return zero, ErrRange
+	}
+	return converted, nil
 }
 
 // Int64 converts d exactly to int64. It returns [ErrInexact] for a non-integer
