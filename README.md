@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/joeychilson/decimal/actions/workflows/ci.yml/badge.svg)](https://github.com/joeychilson/decimal/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/joeychilson/decimal.svg)](https://pkg.go.dev/github.com/joeychilson/decimal)
+[![Release](https://img.shields.io/github/v/release/joeychilson/decimal)](https://github.com/joeychilson/decimal/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An arbitrary-precision finite decimal arithmetic library for Go.
