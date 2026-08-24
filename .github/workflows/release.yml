@@ -26,14 +26,29 @@ jobs:
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME}"
-          if [[ ! "${tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+          if [[ ! "${tag}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*))?$ ]]; then
             echo "invalid release tag: ${tag}" >&2
             exit 1
           fi
 
+          if [[ "${tag}" == *-* ]]; then
+            IFS='.' read -ra identifiers <<< "${tag#*-}"
+            for identifier in "${identifiers[@]}"; do
+              if [[ "${identifier}" =~ ^0[0-9]+$ ]]; then
+                echo "invalid numeric prerelease identifier in tag: ${tag}" >&2
+                exit 1
+              fi
+            done
+          fi
+
           major="${tag%%.*}"
           module="$(go list -m -f '{{.Path}}')"
-          if [[ "${major}" != "v0" && "${major}" != "v1" && "${module##*/}" != "${major}" ]]; then
+          module_base="${module##*/}"
+          if [[ ( "${major}" == "v0" || "${major}" == "v1" ) && "${module_base}" =~ ^v([2-9]|[1-9][0-9]+)$ ]]; then
+            echo "tag ${tag} is incompatible with versioned module path: ${module}" >&2
+            exit 1
+          fi
+          if [[ "${major}" != "v0" && "${major}" != "v1" && "${module_base}" != "${major}" ]]; then
             echo "tag ${tag} requires module path ending in /${major}: ${module}" >&2
             exit 1
           fi
