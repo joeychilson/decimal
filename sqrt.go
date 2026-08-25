@@ -78,7 +78,13 @@ func sqrtToPrecision(x Decimal, precision uint, mode RoundingMode) (Decimal, err
 		return squareRootAtRangeLimit(x, precision, mode)
 	}
 
-	shift := squareRootScaleShift(targetScale, scale)
+	// Determine which side of the radicand must receive a power of ten so an
+	// integer root has the requested scale.
+	var scaleShift scaleAccumulator
+	scaleShift.add(targetScale)
+	scaleShift.add(targetScale)
+	scaleShift.sub(scale)
+	shift := scaleShift.coefficientShift()
 	if !shift.exponentFits {
 		return squareRootAtRangeLimit(x, precision, mode)
 	}
@@ -231,14 +237,4 @@ func squareRootAtRangeLimit(x Decimal, precision uint, mode RoundingMode) (Decim
 		return Decimal{}, err
 	}
 	return Decimal{}, ErrRange
-}
-
-// squareRootScaleShift determines which side of the radicand must receive a
-// power of ten so an integer root has the requested scale.
-func squareRootScaleShift(targetScale, scale Scale) coefficientScaleShift {
-	var shift scaleAccumulator
-	shift.add(targetScale)
-	shift.add(targetScale)
-	shift.sub(scale)
-	return shift.coefficientShift()
 }
