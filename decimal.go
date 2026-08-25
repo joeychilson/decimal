@@ -445,18 +445,6 @@ func (a *scaleAccumulator) addUint64(value uint64) {
 	a.large.Add(&a.large, a.operand.SetUint64(value))
 }
 
-func (a *scaleAccumulator) mulUint64(multiplier uint64) {
-	if !a.promoted {
-		if product, ok := multiplyScale(a.small, multiplier); ok {
-			a.small = product
-			return
-		}
-		a.large.SetInt64(int64(a.small))
-		a.promoted = true
-	}
-	a.large.Mul(&a.large, a.operand.SetUint64(multiplier))
-}
-
 func (a *scaleAccumulator) fitCoefficient(coefficient *big.Int) (Scale, error) {
 	if a.promoted {
 		return fitCoefficientScale(coefficient, &a.large)
