@@ -90,7 +90,6 @@ func Parse(s string) (Decimal, error) {
 
 	var exponentMagnitude uint64
 	exponentNegative := false
-	exponentOverflow := false
 	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
 		i++
 		if i < len(s) && (s[i] == '+' || s[i] == '-') {
@@ -99,23 +98,21 @@ func Parse(s string) (Decimal, error) {
 		}
 		exponentStart := i
 		for i < len(s) && s[i] >= '0' && s[i] <= '9' {
-			digit := uint64(s[i] - '0')
-			if exponentMagnitude > (math.MaxUint64-digit)/10 {
-				exponentOverflow = true
-			} else if !exponentOverflow {
-				exponentMagnitude = exponentMagnitude*10 + digit
-			}
 			i++
 		}
 		if exponentStart == i {
 			return Decimal{}, &ParseError{Input: s, Offset: i, Err: ErrSyntax}
 		}
+		if i == len(s) {
+			var err error
+			exponentMagnitude, err = strconv.ParseUint(s[exponentStart:], 10, 64)
+			if err != nil {
+				return Decimal{}, &ParseError{Input: s, Offset: len(s), Err: ErrRange}
+			}
+		}
 	}
 	if i != len(s) {
 		return Decimal{}, &ParseError{Input: s, Offset: i, Err: ErrSyntax}
-	}
-	if exponentOverflow {
-		return Decimal{}, &ParseError{Input: s, Offset: len(s), Err: ErrRange}
 	}
 
 	fraction := uint64(fractionDigits)
