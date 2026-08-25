@@ -37,7 +37,7 @@ func FromFloatExact[T Float](x T) (Decimal, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return Decimal{}, ErrInvalidOperation
 	}
-	return fromBigRatExact(new(big.Rat).SetFloat64(f))
+	return FromBigRat(new(big.Rat).SetFloat64(f))
 }
 
 // FromBigRat converts x exactly. It returns [ErrInexact] unless x has a finite
@@ -48,7 +48,8 @@ func FromBigRat(x *big.Rat) (Decimal, error) {
 	if x == nil {
 		panic("decimal: nil *big.Rat")
 	}
-	return fromBigRatExact(x)
+	result, err := NewBig(x.Num(), 0).Div(NewBig(x.Denom(), 0))
+	return result.Canonical(), err
 }
 
 // BigRat returns a new big.Rat equal to d. The caller may modify the result
@@ -69,7 +70,24 @@ func (d Decimal) BigRat() *big.Rat {
 // BigInt returns d as an integer. It returns [ErrInexact] if d has a non-zero
 // fractional part. The caller may modify the result without affecting d.
 func (d Decimal) BigInt() (*big.Int, error) {
-	return integerCoefficient(d)
+	coefficient, scale := decimalParts(d)
+	if coefficient.Sign() == 0 {
+		return new(big.Int), nil
+	}
+	if scale <= 0 {
+		return multiplyByPowerOfTen(new(big.Int), coefficient, scaleMagnitude(scale)), nil
+	}
+	if uint64(scale) >= uint64(decimalDigitCount(coefficient)) {
+		return nil, ErrInexact
+	}
+	quotient := new(big.Int)
+	remainder := new(big.Int)
+	divisor := setPowerOfTen(new(big.Int), uint64(scale))
+	quotient.QuoRem(coefficient, divisor, remainder)
+	if remainder.Sign() != 0 {
+		return nil, ErrInexact
+	}
+	return quotient, nil
 }
 
 // Int converts d exactly to T. It returns [ErrInexact] if d has a non-zero
@@ -82,7 +100,7 @@ func (d Decimal) BigInt() (*big.Int, error) {
 //	n, err := cents.Int[Cents]()
 func (d Decimal) Int[T Integer]() (T, error) {
 	var zero T
-	integer, err := integerCoefficient(d)
+	integer, err := d.BigInt()
 	if err != nil {
 		return zero, err
 	}
@@ -174,30 +192,4 @@ func (d Decimal) Float[T Float]() (value T, exact bool) {
 // convert to an infinity, in which case exact is false.
 func (d Decimal) Float64() (value float64, exact bool) {
 	return d.Float[float64]()
-}
-
-func fromBigRatExact(x *big.Rat) (Decimal, error) {
-	result, err := divideExact(NewBig(x.Num(), 0), NewBig(x.Denom(), 0))
-	return result.Canonical(), err
-}
-
-func integerCoefficient(d Decimal) (*big.Int, error) {
-	coefficient, scale := decimalParts(d)
-	if coefficient.Sign() == 0 {
-		return new(big.Int), nil
-	}
-	if scale <= 0 {
-		return multiplyByPowerOfTen(new(big.Int), coefficient, scaleMagnitude(scale)), nil
-	}
-	if uint64(scale) >= uint64(decimalDigitCount(coefficient)) {
-		return nil, ErrInexact
-	}
-	quotient := new(big.Int)
-	remainder := new(big.Int)
-	divisor := setPowerOfTen(new(big.Int), uint64(scale))
-	quotient.QuoRem(coefficient, divisor, remainder)
-	if remainder.Sign() != 0 {
-		return nil, ErrInexact
-	}
-	return quotient, nil
 }

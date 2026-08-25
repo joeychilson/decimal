@@ -175,7 +175,7 @@ func BenchmarkSmallExactSquareRoot(b *testing.B) {
 		{"uint64_limit_square", FromInt(maximumUint32 * maximumUint32), true},
 		{"uint64_limit_inexact", FromInt(uint64(math.MaxUint64)), false},
 	} {
-		want, wantErr := squareRootExact(test.value)
+		want, wantErr := test.value.Sqrt()
 		coefficient, scale := decimalParts(test.value)
 		b.Run(test.name, func(b *testing.B) {
 			b.Run("small", func(b *testing.B) {
@@ -190,7 +190,7 @@ func BenchmarkSmallExactSquareRoot(b *testing.B) {
 			b.Run("integer", func(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
-					sqrtBenchmarkDecimal, errSqrtBenchmark = squareRootExact(test.value)
+					sqrtBenchmarkDecimal, errSqrtBenchmark = test.value.Sqrt()
 				}
 				if !errors.Is(errSqrtBenchmark, wantErr) || wantErr == nil && !sqrtBenchmarkDecimal.SameRepresentation(want) {
 					b.Fatalf("integer root = %s, %v; want %s, %v", sqrtBenchmarkDecimal, errSqrtBenchmark, want, wantErr)

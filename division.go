@@ -17,7 +17,70 @@ import (
 // the representation is adjusted only as far as needed to preserve an exact
 // result, or Div returns [ErrRange] if none exists.
 func (d Decimal) Div(x Decimal) (Decimal, error) {
-	return divideExact(d, x)
+	divisorCoefficient, divisorScale := decimalParts(x)
+	if divisorCoefficient.Sign() == 0 {
+		return Decimal{}, ErrDivisionByZero
+	}
+	dividendCoefficient, dividendScale := decimalParts(d)
+	var scale scaleAccumulator
+	scale.add(dividendScale)
+	scale.sub(divisorScale)
+
+	var numerator big.Int
+	numerator.Set(dividendCoefficient)
+	if numerator.Sign() == 0 {
+		resultScale, err := scale.fitCoefficient(&numerator)
+		if err != nil {
+			return Decimal{}, err
+		}
+		return makeDecimal(&numerator, resultScale), nil
+	}
+
+	var denominator big.Int
+	denominator.Set(divisorCoefficient)
+	if denominator.Sign() < 0 {
+		numerator.Neg(&numerator)
+		denominator.Neg(&denominator)
+	}
+
+	var absoluteNumerator, gcd big.Int
+	absoluteNumerator.Abs(&numerator)
+	gcd.GCD(nil, nil, &absoluteNumerator, &denominator)
+	numerator.Quo(&numerator, &gcd)
+	denominator.Quo(&denominator, &gcd)
+
+	twos := uint64(denominator.TrailingZeroBits())
+	denominator.Rsh(&denominator, uint(twos))
+	var fives uint64
+	var quotient, remainder big.Int
+	for {
+		quotient.QuoRem(&denominator, bigFive, &remainder)
+		if remainder.Sign() != 0 {
+			break
+		}
+		denominator.Set(&quotient)
+		fives++
+	}
+	if denominator.Cmp(bigOne) != 0 {
+		return Decimal{}, ErrInexact
+	}
+
+	digits := max(twos, fives)
+	if twos < digits {
+		numerator.Lsh(&numerator, uint(digits-twos))
+	}
+	if fives < digits {
+		var exponent, factor big.Int
+		exponent.SetUint64(digits - fives)
+		factor.Exp(bigFive, &exponent, nil)
+		numerator.Mul(&numerator, &factor)
+	}
+	scale.addUint64(digits)
+	resultScale, err := scale.fitCoefficient(&numerator)
+	if err != nil {
+		return Decimal{}, err
+	}
+	return makeDecimal(&numerator, resultScale), nil
 }
 
 // DivScale returns d/x represented at exactly scale, using mode if digits must
@@ -55,17 +118,6 @@ func (d Decimal) DivScale(x Decimal, scale Scale, mode RoundingMode) (Decimal, e
 // remainder has the finer (larger) scale of d and x. QuoRem returns
 // [ErrDivisionByZero] if x is zero.
 func (d Decimal) QuoRem(x Decimal) (q, r Decimal, err error) {
-	return quoRem(d, x)
-}
-
-// Rem returns the remainder from [Decimal.QuoRem]. The sign of a non-zero
-// remainder is the sign of d. Rem returns [ErrDivisionByZero] if x is zero.
-func (d Decimal) Rem(x Decimal) (Decimal, error) {
-	_, remainder, err := quoRem(d, x)
-	return remainder, err
-}
-
-func quoRem(d, x Decimal) (q, r Decimal, err error) {
 	xCoefficient, xScale := decimalParts(x)
 	if xCoefficient.Sign() == 0 {
 		return Decimal{}, Decimal{}, ErrDivisionByZero
@@ -90,12 +142,19 @@ func quoRem(d, x Decimal) (q, r Decimal, err error) {
 	return makeDecimal(&quotient, 0), makeDecimal(&remainder, scale), nil
 }
 
+// Rem returns the remainder from [Decimal.QuoRem]. The sign of a non-zero
+// remainder is the sign of d. Rem returns [ErrDivisionByZero] if x is zero.
+func (d Decimal) Rem(x Decimal) (Decimal, error) {
+	_, remainder, err := d.QuoRem(x)
+	return remainder, err
+}
+
 // divideToPrecision divides directly at the scale needed for precision. An
 // exact quotient discards only zeros beyond the operands' preferred quotient
 // scale; unlimited precision remains on the exact factorization path.
 func divideToPrecision(x, y Decimal, precision uint, mode RoundingMode) (Decimal, error) {
 	if precision == 0 {
-		return divideExact(x, y)
+		return x.Div(y)
 	}
 	divisor, divisorScale := decimalParts(y)
 	if divisor.Sign() == 0 {
@@ -131,7 +190,7 @@ func divideToPrecision(x, y Decimal, precision uint, mode RoundingMode) (Decimal
 
 	targetScale, err := divisionTargetScale(dividendScale, divisorScale, ratioExponent, precision)
 	if err != nil {
-		exact, exactErr := divideExact(x, y)
+		exact, exactErr := x.Div(y)
 		if exactErr == nil {
 			return roundToPrecision(exact, precision, mode)
 		}
@@ -180,75 +239,6 @@ func decimalPrimeFactorDigits(x *big.Int) (uint64, bool) {
 		return 0, false
 	}
 	return max(twos, fives), true
-}
-
-// divideExact reduces the coefficient ratio and accepts it only when the
-// remaining denominator contains no primes other than 2 and 5.
-func divideExact(x, y Decimal) (Decimal, error) {
-	yCoefficient, yScale := decimalParts(y)
-	if yCoefficient.Sign() == 0 {
-		return Decimal{}, ErrDivisionByZero
-	}
-	xCoefficient, xScale := decimalParts(x)
-	var scale scaleAccumulator
-	scale.add(xScale)
-	scale.sub(yScale)
-
-	var numerator big.Int
-	numerator.Set(xCoefficient)
-	if numerator.Sign() == 0 {
-		resultScale, err := scale.fitCoefficient(&numerator)
-		if err != nil {
-			return Decimal{}, err
-		}
-		return makeDecimal(&numerator, resultScale), nil
-	}
-
-	var denominator big.Int
-	denominator.Set(yCoefficient)
-	if denominator.Sign() < 0 {
-		numerator.Neg(&numerator)
-		denominator.Neg(&denominator)
-	}
-
-	var absoluteNumerator, gcd big.Int
-	absoluteNumerator.Abs(&numerator)
-	gcd.GCD(nil, nil, &absoluteNumerator, &denominator)
-	numerator.Quo(&numerator, &gcd)
-	denominator.Quo(&denominator, &gcd)
-
-	twos := uint64(denominator.TrailingZeroBits())
-	denominator.Rsh(&denominator, uint(twos))
-	var fives uint64
-	var quotient, remainder big.Int
-	for {
-		quotient.QuoRem(&denominator, bigFive, &remainder)
-		if remainder.Sign() != 0 {
-			break
-		}
-		denominator.Set(&quotient)
-		fives++
-	}
-	if denominator.Cmp(bigOne) != 0 {
-		return Decimal{}, ErrInexact
-	}
-
-	digits := max(twos, fives)
-	if twos < digits {
-		numerator.Lsh(&numerator, uint(digits-twos))
-	}
-	if fives < digits {
-		var exponent, factor big.Int
-		exponent.SetUint64(digits - fives)
-		factor.Exp(bigFive, &exponent, nil)
-		numerator.Mul(&numerator, &factor)
-	}
-	scale.addUint64(digits)
-	resultScale, err := scale.fitCoefficient(&numerator)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return makeDecimal(&numerator, resultScale), nil
 }
 
 // divisionTargetScale computes dividendScale-divisorScale-ratioExponent+

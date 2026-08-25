@@ -10,10 +10,6 @@ import (
 // [ErrInvalidOperation] if d is negative and [ErrInexact] unless the root is a
 // finite Decimal. Use [Context.Sqrt] for a rounded square root.
 func (d Decimal) Sqrt() (Decimal, error) {
-	return squareRootExact(d)
-}
-
-func squareRootExact(d Decimal) (Decimal, error) {
 	coefficient, scale := decimalParts(d)
 	if coefficient.Sign() < 0 {
 		return Decimal{}, ErrInvalidOperation
@@ -55,7 +51,7 @@ func squareRootExact(d Decimal) (Decimal, error) {
 // root and compares 4*A with B*(2*r+1)^2 to classify the exact midpoint.
 func sqrtToPrecision(x Decimal, precision uint, mode RoundingMode) (Decimal, error) {
 	if precision == 0 {
-		return squareRootExact(x)
+		return x.Sqrt()
 	}
 
 	coefficient, scale := decimalParts(x)
@@ -92,7 +88,7 @@ func sqrtToPrecision(x Decimal, precision uint, mode RoundingMode) (Decimal, err
 	// Small coefficients were classified above. Check larger exact roots before
 	// constructing an uncached power to avoid padding a result that already fits.
 	if shift.exponent >= uint64(len(smallPowersOfTen)) && !coefficient.IsUint64() {
-		exact, exactErr := squareRootExact(x)
+		exact, exactErr := x.Sqrt()
 		if exactErr == nil {
 			return roundToPrecision(exact, precision, mode)
 		}
@@ -228,7 +224,7 @@ func squareRootTargetScale(coefficient *big.Int, scale Scale, precision uint) (S
 // squareRootAtRangeLimit preserves exact roots when only the
 // precision-derived working scale lies outside the supported range.
 func squareRootAtRangeLimit(x Decimal, precision uint, mode RoundingMode) (Decimal, error) {
-	exact, err := squareRootExact(x)
+	exact, err := x.Sqrt()
 	if err == nil {
 		return roundToPrecision(exact, precision, mode)
 	}
