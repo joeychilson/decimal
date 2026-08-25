@@ -409,6 +409,34 @@ type scaleAccumulator struct {
 	large, operand big.Int
 }
 
+func (a *scaleAccumulator) set(value *big.Int) {
+	if value.IsInt64() {
+		a.small = Scale(value.Int64())
+		a.promoted = false
+		a.large.SetInt64(0)
+		return
+	}
+	a.large.Set(value)
+	a.promoted = true
+}
+
+func (a *scaleAccumulator) value(dst *big.Int) *big.Int {
+	if a.promoted {
+		return dst.Set(&a.large)
+	}
+	return dst.SetInt64(int64(a.small))
+}
+
+func (a *scaleAccumulator) clone() scaleAccumulator {
+	if !a.promoted {
+		return scaleAccumulator{small: a.small}
+	}
+	var result scaleAccumulator
+	result.promoted = true
+	result.large.Set(&a.large)
+	return result
+}
+
 func (a *scaleAccumulator) add(value Scale) {
 	if !a.promoted {
 		if sum, ok := addScales(a.small, value); ok {
@@ -445,11 +473,33 @@ func (a *scaleAccumulator) addUint64(value uint64) {
 	a.large.Add(&a.large, a.operand.SetUint64(value))
 }
 
+func (a *scaleAccumulator) subUint64(value uint64) {
+	if value <= uint64(math.MaxInt64) {
+		a.sub(Scale(value))
+		return
+	}
+	if !a.promoted {
+		a.large.SetInt64(int64(a.small))
+		a.promoted = true
+	}
+	a.large.Sub(&a.large, a.operand.SetUint64(value))
+}
+
 func (a *scaleAccumulator) fitCoefficient(coefficient *big.Int) (Scale, error) {
 	if a.promoted {
 		return fitCoefficientScale(coefficient, &a.large)
 	}
 	return a.small, nil
+}
+
+// fitRoundedCoefficient fits a coefficient whose significant-digit rounding
+// is complete. Moving a scale below the minimum back into range would append
+// significant zeros and violate the requested precision.
+func (a *scaleAccumulator) fitRoundedCoefficient(coefficient *big.Int) (Scale, error) {
+	if a.promoted && a.large.Cmp(a.operand.SetInt64(math.MinInt64)) < 0 {
+		return 0, ErrRange
+	}
+	return a.fitCoefficient(coefficient)
 }
 
 func (a *scaleAccumulator) representableScale() (Scale, error) {

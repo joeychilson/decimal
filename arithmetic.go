@@ -37,11 +37,15 @@ func (d Decimal) Sub(x Decimal) Decimal {
 // representation only when it can preserve the exact value; otherwise it
 // returns [ErrRange].
 func (d Decimal) Mul(x Decimal) (Decimal, error) {
-	coefficient, scale, err := multiplyParts(d, x)
+	coefficient, scale, wideScale := multiplyParts(d, x)
+	if wideScale == nil {
+		return makeDecimal(coefficient, scale), nil
+	}
+	resultScale, err := fitCoefficientScale(coefficient, wideScale)
 	if err != nil {
 		return Decimal{}, err
 	}
-	return makeDecimal(coefficient, scale), nil
+	return makeDecimal(coefficient, resultScale), nil
 }
 
 // Neg returns -d. Zero has no negative representation, so Neg leaves zero's
@@ -91,19 +95,17 @@ func alignedParts(storage *big.Int, x, y scaledCoefficient) (xCoefficient, yCoef
 	return xCoefficient, yCoefficient, scale
 }
 
-// multiplyParts returns the exact product, adjusting its representation only
-// when the operands' preferred scale lies outside Scale's range.
-func multiplyParts(x, y Decimal) (*big.Int, Scale, error) {
+// multiplyParts returns the exact coefficient and its potentially wide
+// preferred scale.
+func multiplyParts(x, y Decimal) (*big.Int, Scale, *big.Int) {
 	xCoefficient, xScale := decimalParts(x)
 	yCoefficient, yScale := decimalParts(y)
 	coefficient := new(big.Int).Mul(xCoefficient, yCoefficient)
 	if scale, ok := addScales(xScale, yScale); ok {
 		return coefficient, scale, nil
 	}
-
-	var scale scaleAccumulator
-	scale.add(xScale)
-	scale.add(yScale)
-	fitted, err := scale.fitCoefficient(coefficient)
-	return coefficient, fitted, err
+	wideScale := new(big.Int).SetInt64(int64(xScale))
+	var yScaleValue big.Int
+	wideScale.Add(wideScale, yScaleValue.SetInt64(int64(yScale)))
+	return coefficient, 0, wideScale
 }

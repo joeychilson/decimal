@@ -273,6 +273,20 @@ func TestContextMul_HandlesExtremeScales(t *testing.T) {
 	}
 }
 
+func TestContextMul_RoundsIntermediateScaleIntoRange(t *testing.T) {
+	maximumScale := Scale(math.MaxInt64)
+	ctx := Context{Precision: 1, Rounding: HalfEven}
+	got, err := ctx.Mul(New(15, maximumScale), New(1, 1))
+	want := New(2, maximumScale)
+	if err != nil || !got.SameRepresentation(want) {
+		t.Fatalf("Context.Mul = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, want.Coefficient(), want.Scale())
+	}
+
+	if _, err := (Context{Precision: 1, Rounding: Exact}).Mul(New(15, maximumScale), New(1, 1)); !errors.Is(err, ErrInexact) {
+		t.Fatalf("exact Context.Mul error = %v, want ErrInexact", err)
+	}
+}
+
 func TestContextMul_MatchesBigRatForRandomInputs(t *testing.T) {
 	rng := rand.New(rand.NewPCG(11, 12))
 	modes := []RoundingMode{HalfEven, HalfUp, HalfDown, TowardZero, AwayFromZero, Floor, Ceiling, ZeroFiveUp, Exact}
@@ -504,6 +518,106 @@ func TestContextFMA_HandlesExtremeScales(t *testing.T) {
 				t.Fatalf("Context.FMA = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, test.want.Coefficient(), test.want.Scale())
 			}
 		})
+	}
+}
+
+func TestContextFMA_RoundsIntermediateScaleIntoRange(t *testing.T) {
+	maximumScale := Scale(math.MaxInt64)
+	for _, test := range []struct {
+		name      string
+		precision uint
+		mode      RoundingMode
+		x, y, z   Decimal
+		want      Decimal
+	}{
+		{
+			name:      "nearby addend",
+			precision: 1,
+			x:         New(15, maximumScale),
+			y:         New(1, 1),
+			z:         New(1, maximumScale),
+			want:      New(2, maximumScale),
+		},
+		{
+			name:      "distant positive product breaks tie",
+			precision: 4,
+			x:         New(1, maximumScale),
+			y:         New(1, 1),
+			z:         New(12_345, 0),
+			want:      New(1_235, -1),
+		},
+		{
+			name:      "distant negative product breaks tie",
+			precision: 4,
+			x:         New(-1, maximumScale),
+			y:         New(1, 1),
+			z:         New(12_355, 0),
+			want:      New(1_235, -1),
+		},
+		{
+			name:      "rounded scale is fitted after rounding",
+			precision: 2,
+			x:         New(1, maximumScale),
+			y:         New(1, 2),
+			z:         New(1, maximumScale),
+			want:      New(1, maximumScale),
+		},
+		{
+			name:      "scale gap wider than uint64",
+			precision: 1,
+			mode:      AwayFromZero,
+			x:         New(1, maximumScale),
+			y:         New(1, 1),
+			z:         New(1, Scale(math.MinInt64)),
+			want:      New(2, Scale(math.MinInt64)),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := (Context{Precision: test.precision, Rounding: test.mode}).FMA(test.x, test.y, test.z)
+			if err != nil || !got.SameRepresentation(test.want) {
+				t.Fatalf("Context.FMA = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, test.want.Coefficient(), test.want.Scale())
+			}
+		})
+	}
+
+	if _, err := (Context{Precision: 2, Rounding: HalfEven}).FMA(New(1, maximumScale), New(1, 1), New(1, maximumScale)); !errors.Is(err, ErrRange) {
+		t.Fatalf("unrepresentable rounded Context.FMA error = %v, want ErrRange", err)
+	}
+}
+
+func TestWideProductAddition_MatchesBigRat(t *testing.T) {
+	rng := rand.New(rand.NewPCG(23, 24))
+	modes := [...]RoundingMode{HalfEven, HalfUp, HalfDown, TowardZero, AwayFromZero, Floor, Ceiling, ZeroFiveUp, Exact}
+	for i := range 1_000 {
+		productCoefficient := int64(rng.Uint64()%1_000_000 + 1)
+		zCoefficient := int64(rng.Uint64()%1_000_000 + 1)
+		if rng.Uint64()&1 != 0 {
+			productCoefficient = -productCoefficient
+		}
+		if rng.Uint64()&1 != 0 {
+			zCoefficient = -zCoefficient
+		}
+		productScale := Scale(rng.Uint64()%101 + 10)
+		zScale := productScale - Scale(rng.Uint64()%201)
+		precision := uint(rng.Uint64()%8 + 1)
+		mode := modes[rng.Uint64()%uint64(len(modes))]
+
+		product := New(productCoefficient, productScale)
+		z := New(zCoefficient, zScale)
+		coefficient := product.Coefficient()
+		workingScale := scaleAccumulator{small: productScale}
+		got, gotErr := addWideProductToPrecision(coefficient, &workingScale, z.Coefficient(), zScale, precision, mode)
+		wantRat := new(big.Rat).Add(product.BigRat(), z.BigRat())
+		want, exact := roundRatToPrecision(wantRat, productScale, precision, mode)
+		if mode == Exact && !exact {
+			if !errors.Is(gotErr, ErrInexact) {
+				t.Fatalf("case %d error = %v, want ErrInexact", i, gotErr)
+			}
+			continue
+		}
+		if gotErr != nil || !got.SameRepresentation(want) {
+			t.Fatalf("case %d = coefficient %s, scale %d, %v; want coefficient %s, scale %d", i, got.Coefficient(), got.Scale(), gotErr, want.Coefficient(), want.Scale())
+		}
 	}
 }
 
@@ -772,6 +886,17 @@ func TestContextPower_ReturnsRoundedAndExactResults(t *testing.T) {
 	extremeZero := New(0, Scale(math.MaxInt64))
 	if _, err := (Context{Precision: 3}).Pow(extremeZero, -2); !errors.Is(err, ErrDivisionByZero) {
 		t.Fatalf("context extreme zero negative power error = %v", err)
+	}
+}
+
+func TestContextPow_RoundsIntermediateScaleIntoRange(t *testing.T) {
+	maximumScale := Scale(math.MaxInt64)
+	baseScale := maximumScale/2 + 1
+	ctx := Context{Precision: 2, Rounding: HalfEven}
+	got, err := ctx.Pow(New(15, baseScale), 2)
+	want := New(22, maximumScale)
+	if err != nil || !got.SameRepresentation(want) {
+		t.Fatalf("Context.Pow = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, want.Coefficient(), want.Scale())
 	}
 }
 

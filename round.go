@@ -135,13 +135,20 @@ func roundToPrecision(d Decimal, precision uint, mode RoundingMode) (Decimal, er
 }
 
 // roundCoefficient removes coefficient digits and rounds once at the resulting
-// quantum.
+// quantum. It consumes coefficient.
 func roundCoefficient(coefficient *big.Int, scale Scale, digits, precision uint, mode RoundingMode) (Decimal, error) {
+	workingScale := scaleAccumulator{small: scale}
+	return roundCoefficientAtScale(coefficient, &workingScale, digits, precision, mode)
+}
+
+// roundCoefficientAtScale is the wide-scale form of roundCoefficient. It
+// consumes coefficient and scale.
+func roundCoefficientAtScale(coefficient *big.Int, scale *scaleAccumulator, digits, precision uint, mode RoundingMode) (Decimal, error) {
 	remove := uint64(digits - precision)
-	if remove > scaleDistance(scale, Scale(math.MinInt64)) {
+	scale.subUint64(remove)
+	if scale.promoted && scale.large.Cmp(scale.operand.SetInt64(math.MinInt64)) < 0 {
 		return Decimal{}, ErrRange
 	}
-	target := Scale(uint64(scale) - remove)
 	chunkDigits := uint64(decimalWordDigits)
 	chunkLimit := 4 * chunkDigits
 	// Paired benchmarks show chunked division wins through four word-sized
@@ -211,10 +218,14 @@ func roundCoefficient(coefficient *big.Int, scale Scale, digits, precision uint,
 	var remainder big.Int
 	for uint(decimalDigitCount(coefficient)) > precision {
 		coefficient.QuoRem(coefficient, bigTen, &remainder)
-		if remainder.Sign() != 0 || target == Scale(math.MinInt64) {
+		if remainder.Sign() != 0 {
 			return Decimal{}, ErrRange
 		}
-		target--
+		scale.sub(1)
+	}
+	target, err := scale.fitRoundedCoefficient(coefficient)
+	if err != nil {
+		return Decimal{}, err
 	}
 	return makeDecimal(coefficient, target), nil
 }
@@ -341,4 +352,33 @@ func roundCoefficientToPrecision(coefficient *big.Int, scale Scale, precision ui
 		return makeDecimal(coefficient, scale), nil
 	}
 	return roundCoefficient(coefficient, scale, digits, precision, mode)
+}
+
+// roundCoefficientToPrecisionAtScale delays fitting a wide exact scale until
+// the context's final significant-digit rounding has been applied.
+func roundCoefficientToPrecisionAtScale(coefficient *big.Int, scale *scaleAccumulator, precision uint, mode RoundingMode) (Decimal, error) {
+	if !scale.promoted || scale.large.IsInt64() {
+		valueScale := scale.small
+		if scale.promoted {
+			valueScale = Scale(scale.large.Int64())
+		}
+		return roundCoefficientToPrecision(coefficient, valueScale, precision, mode)
+	}
+	if coefficient.Sign() == 0 || precision == 0 || scale.large.Sign() < 0 {
+		valueScale, err := scale.fitCoefficient(coefficient)
+		if err != nil {
+			return Decimal{}, err
+		}
+		return roundCoefficientToPrecision(coefficient, valueScale, precision, mode)
+	}
+
+	digits := uint(decimalDigitCount(coefficient))
+	if digits <= precision {
+		valueScale, err := scale.fitCoefficient(coefficient)
+		if err != nil {
+			return Decimal{}, err
+		}
+		return makeDecimal(coefficient, valueScale), nil
+	}
+	return roundCoefficientAtScale(coefficient, scale, digits, precision, mode)
 }

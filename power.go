@@ -17,21 +17,30 @@ func (d Decimal) Pow(n int64) (Decimal, error) {
 
 func powToPrecision(d Decimal, n int64, precision uint, mode RoundingMode) (Decimal, error) {
 	if n >= 0 {
-		coefficient, scale, err := powPositiveParts(d, uint64(n))
-		if err != nil {
-			return Decimal{}, err
+		if precision == 0 {
+			coefficient, scale, err := powPositiveParts(d, uint64(n))
+			if err != nil {
+				return Decimal{}, err
+			}
+			return makeDecimal(coefficient, scale), nil
 		}
-		return roundCoefficientToPrecision(coefficient, scale, precision, mode)
+		coefficient, scale, wideScale := powPositivePartsAtScale(d, uint64(n))
+		if wideScale == nil {
+			return roundCoefficientToPrecision(coefficient, scale, precision, mode)
+		}
+		var workingScale scaleAccumulator
+		workingScale.set(wideScale)
+		return roundCoefficientToPrecisionAtScale(coefficient, &workingScale, precision, mode)
 	}
 	if d.IsZero() {
 		return Decimal{}, ErrDivisionByZero
 	}
 	magnitude := uint64(-(n + 1)) + 1
-	coefficient, scale, err := powPositiveParts(d, magnitude)
+	coefficient, resultScale, err := powPositiveParts(d, magnitude)
 	if err != nil {
 		return Decimal{}, err
 	}
-	return divideToPrecision(FromInt(1), makeDecimal(coefficient, scale), precision, mode)
+	return divideToPrecision(FromInt(1), makeDecimal(coefficient, resultScale), precision, mode)
 }
 
 // powPositiveParts returns a caller-owned coefficient and exact fitted scale
@@ -50,6 +59,23 @@ func powPositiveParts(d Decimal, exponent uint64) (*big.Int, Scale, error) {
 	resultScale.Mul(&resultScale, multiplier.SetUint64(exponent))
 	fitted, err := fitCoefficientScale(result, &resultScale)
 	return result, fitted, err
+}
+
+// powPositivePartsAtScale leaves an overflowed preferred scale unfitted so a
+// finite-precision context can round before enforcing Scale's range.
+func powPositivePartsAtScale(d Decimal, exponent uint64) (*big.Int, Scale, *big.Int) {
+	coefficient, scale := decimalParts(d)
+	var power big.Int
+	power.SetUint64(exponent)
+	result := new(big.Int).Exp(coefficient, &power, nil)
+	if resultScale, ok := multiplyScale(scale, exponent); ok {
+		return result, resultScale, nil
+	}
+
+	resultScale := new(big.Int).SetInt64(int64(scale))
+	var multiplier big.Int
+	resultScale.Mul(resultScale, multiplier.SetUint64(exponent))
+	return result, 0, resultScale
 }
 
 // multiplyScale returns scale*multiplier and reports whether the result fits

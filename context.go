@@ -72,11 +72,13 @@ func (c Context) Mul(x, y Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	coefficient, scale, err := multiplyParts(x, y)
-	if err != nil {
-		return Decimal{}, err
+	coefficient, scale, wideScale := multiplyParts(x, y)
+	if wideScale == nil {
+		return roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
 	}
-	return roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
+	var workingScale scaleAccumulator
+	workingScale.set(wideScale)
+	return roundCoefficientToPrecisionAtScale(coefficient, &workingScale, c.Precision, c.Rounding)
 }
 
 // Div returns x/y, rounded once according to c.
@@ -98,24 +100,27 @@ func (c Context) FMA(x, y, z Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	product, productScale, err := multiplyParts(x, y)
-	if err != nil {
-		return Decimal{}, err
+	product, productScale, wideProductScale := multiplyParts(x, y)
+	if wideProductScale == nil {
+		return fmaToPrecision(product, productScale, z, c.Precision, c.Rounding)
 	}
 	zCoefficient, zScale := decimalParts(z)
-	preferredScale := max(productScale, zScale)
+	var workingScale scaleAccumulator
+	workingScale.set(wideProductScale)
+	if workingScale.large.Sign() < 0 || c.Precision == 0 {
+		scale, err := workingScale.fitCoefficient(product)
+		if err != nil {
+			return Decimal{}, err
+		}
+		return fmaToPrecision(product, scale, z, c.Precision, c.Rounding)
+	}
 	if product.Sign() == 0 {
-		return roundWithPreferredScale(z, preferredScale, c.Precision, c.Rounding)
+		return roundWithPreferredScale(z, Scale(math.MaxInt64), c.Precision, c.Rounding)
 	}
 	if zCoefficient.Sign() == 0 {
-		return roundCoefficientWithPreferredScale(product, product, productScale, preferredScale, c.Precision, c.Rounding)
+		return roundCoefficientToPrecisionAtScale(product, &workingScale, c.Precision, c.Rounding)
 	}
-	return addNonzeroPartsToPrecision(
-		scaledCoefficient{coefficient: product, scale: productScale},
-		scaledCoefficient{coefficient: zCoefficient, scale: zScale},
-		c.Precision,
-		c.Rounding,
-	)
+	return addWideProductToPrecision(product, &workingScale, zCoefficient, zScale, c.Precision, c.Rounding)
 }
 
 // Sqrt returns the non-negative square root of x, rounded once according to c.
@@ -153,6 +158,72 @@ func (c Context) FromBigRat(x *big.Rat) (Decimal, error) {
 		return Decimal{}, err
 	}
 	return divideToPrecision(NewBig(x.Num(), 0), NewBig(x.Denom(), 0), c.Precision, c.Rounding)
+}
+
+func fmaToPrecision(product *big.Int, productScale Scale, z Decimal, precision uint, mode RoundingMode) (Decimal, error) {
+	zCoefficient, zScale := decimalParts(z)
+	preferredScale := max(productScale, zScale)
+	if product.Sign() == 0 {
+		return roundWithPreferredScale(z, preferredScale, precision, mode)
+	}
+	if zCoefficient.Sign() == 0 {
+		return roundCoefficientWithPreferredScale(product, product, productScale, preferredScale, precision, mode)
+	}
+	return addNonzeroPartsToPrecision(
+		scaledCoefficient{coefficient: product, scale: productScale},
+		scaledCoefficient{coefficient: zCoefficient, scale: zScale},
+		precision,
+		mode,
+	)
+}
+
+// addWideProductToPrecision adds a product whose preferred scale is above
+// Scale's range to a regular Decimal coefficient. Translating both scales by
+// the same amount lets the established bounded-addition kernel perform the one
+// final rounding required by FMA.
+func addWideProductToPrecision(product *big.Int, productScale *scaleAccumulator, zCoefficient *big.Int, zScale Scale, precision uint, mode RoundingMode) (Decimal, error) {
+	var gap, zScaleValue big.Int
+	productScale.value(&gap)
+	gap.Sub(&gap, zScaleValue.SetInt64(int64(zScale)))
+	if gap.Sign() < 0 {
+		panic("decimal: wide product scale is not above addend scale")
+	}
+	gapFits := gap.IsUint64()
+	shiftedProductScale := Scale(math.MaxInt64)
+	shiftedZScale := Scale(math.MinInt64)
+	shiftedProduct := product
+	var directionalRemainder big.Int
+	actualScale := productScale.clone()
+	if gapFits {
+		shiftedZScale = Scale(uint64(math.MaxInt64) - gap.Uint64())
+	} else {
+		// A scale gap wider than uint64 is also wider than any in-memory
+		// coefficient. The product can only act as a non-zero directional
+		// remainder beside the dominant addend.
+		shiftedProduct = directionalRemainder.SetInt64(int64(product.Sign()))
+		actualScale = scaleAccumulator{small: zScale}
+	}
+	result, err := addNonzeroPartsToPrecision(
+		scaledCoefficient{coefficient: shiftedProduct, scale: shiftedProductScale},
+		scaledCoefficient{coefficient: zCoefficient, scale: shiftedZScale},
+		precision,
+		mode,
+	)
+	if err != nil {
+		return Decimal{}, err
+	}
+	coefficient, resultScale := decimalParts(result)
+	ownedCoefficient := new(big.Int).Set(coefficient)
+	if gapFits {
+		actualScale.subUint64(scaleDistance(shiftedProductScale, resultScale))
+	} else {
+		actualScale.addUint64(scaleDistance(resultScale, shiftedZScale))
+	}
+	target, err := actualScale.fitRoundedCoefficient(ownedCoefficient)
+	if err != nil {
+		return Decimal{}, err
+	}
+	return makeDecimal(ownedCoefficient, target), nil
 }
 
 // addToPrecision adds or subtracts two values with a single final rounding.
