@@ -17,11 +17,7 @@ import (
 // the representation is adjusted only as far as needed to preserve an exact
 // result, or Div returns [ErrRange] if none exists.
 func (d Decimal) Div(x Decimal) (Decimal, error) {
-	result, err := divideExact(d, x)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return divideExact(d, x)
 }
 
 // DivScale returns d/x represented at exactly scale, using mode if digits must
@@ -59,21 +55,14 @@ func (d Decimal) DivScale(x Decimal, scale Scale, mode RoundingMode) (Decimal, e
 // remainder has the finer (larger) scale of d and x. QuoRem returns
 // [ErrDivisionByZero] if x is zero.
 func (d Decimal) QuoRem(x Decimal) (q, r Decimal, err error) {
-	q, r, err = quoRem(d, x)
-	if err != nil {
-		return Decimal{}, Decimal{}, err
-	}
-	return q, r, nil
+	return quoRem(d, x)
 }
 
 // Rem returns the remainder from [Decimal.QuoRem]. The sign of a non-zero
 // remainder is the sign of d. Rem returns [ErrDivisionByZero] if x is zero.
 func (d Decimal) Rem(x Decimal) (Decimal, error) {
 	_, remainder, err := quoRem(d, x)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return remainder, nil
+	return remainder, err
 }
 
 func quoRem(d, x Decimal) (q, r Decimal, err error) {

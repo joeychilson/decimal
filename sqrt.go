@@ -10,11 +10,7 @@ import (
 // [ErrInvalidOperation] if d is negative and [ErrInexact] unless the root is a
 // finite Decimal. Use [Context.Sqrt] for a rounded square root.
 func (d Decimal) Sqrt() (Decimal, error) {
-	result, err := squareRootExact(d)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return squareRootExact(d)
 }
 
 func squareRootExact(d Decimal) (Decimal, error) {

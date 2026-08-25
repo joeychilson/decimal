@@ -27,11 +27,7 @@ func (d Decimal) Pow(n int64) (Decimal, error) {
 		return Decimal{}, err
 	}
 	denominator := makeDecimal(coefficient, scale)
-	result, err := divideExact(FromInt(1), denominator)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return divideExact(FromInt(1), denominator)
 }
 
 // powPositiveParts returns a caller-owned coefficient and exact fitted scale

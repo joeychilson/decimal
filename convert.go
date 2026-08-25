@@ -37,11 +37,7 @@ func FromFloatExact[T Float](x T) (Decimal, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return Decimal{}, ErrInvalidOperation
 	}
-	result, err := fromBigRatExact(new(big.Rat).SetFloat64(f))
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return fromBigRatExact(new(big.Rat).SetFloat64(f))
 }
 
 // FromBigRat converts x exactly. It returns [ErrInexact] unless x has a finite
@@ -52,11 +48,7 @@ func FromBigRat(x *big.Rat) (Decimal, error) {
 	if x == nil {
 		panic("decimal: nil *big.Rat")
 	}
-	result, err := fromBigRatExact(x)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return fromBigRatExact(x)
 }
 
 // BigRat returns a new big.Rat equal to d. The caller may modify the result
@@ -77,11 +69,7 @@ func (d Decimal) BigRat() *big.Rat {
 // BigInt returns d as an integer. It returns [ErrInexact] if d has a non-zero
 // fractional part. The caller may modify the result without affecting d.
 func (d Decimal) BigInt() (*big.Int, error) {
-	result, err := integerCoefficient(d)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return integerCoefficient(d)
 }
 
 // Int converts d exactly to T. It returns [ErrInexact] if d has a non-zero

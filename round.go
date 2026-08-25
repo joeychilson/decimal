@@ -79,11 +79,7 @@ func (d Decimal) Rescale(scale Scale, mode RoundingMode) (Decimal, error) {
 	if mode > Exact {
 		return Decimal{}, ErrInvalidRoundingMode
 	}
-	result, err := rescale(d, scale, mode)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return rescale(d, scale, mode)
 }
 
 // Round returns d rounded to at most precision significant digits using mode.
@@ -94,11 +90,7 @@ func (d Decimal) Round(precision uint, mode RoundingMode) (Decimal, error) {
 	if mode > Exact {
 		return Decimal{}, ErrInvalidRoundingMode
 	}
-	result, err := roundToPrecision(d, precision, mode)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return roundToPrecision(d, precision, mode)
 }
 
 // Trunc returns d rounded toward zero at scale zero.
