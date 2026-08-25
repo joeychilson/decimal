@@ -219,7 +219,8 @@ func roundCoefficient(coefficient *big.Int, scale Scale, digits, precision uint,
 	return makeDecimal(coefficient, target), nil
 }
 
-// roundQuotient may reuse the caller-owned remainder as comparison scratch.
+// roundQuotient rounds a quotient/remainder pair produced by QuoRem. It may
+// reuse the caller-owned remainder as comparison scratch.
 func roundQuotient(quotient, remainder, denominator *big.Int, mode RoundingMode) error {
 	if remainder.Sign() == 0 {
 		return nil
@@ -232,19 +233,16 @@ func roundQuotient(quotient, remainder, denominator *big.Int, mode RoundingMode)
 	midpointComparison := 0
 	if isHalfRounding(mode) {
 		remainder.Abs(remainder)
-		denominatorMagnitude := uint64(0)
-		denominatorFits := false
-		if denominator.IsUint64() {
-			denominatorMagnitude = denominator.Uint64()
-			denominatorFits = true
-		} else if denominator.IsInt64() {
-			value := denominator.Int64()
-			denominatorMagnitude = uint64(-(value + 1)) + 1
-			denominatorFits = true
-		}
-		if remainder.IsUint64() && denominatorFits {
+		if denominator.BitLen() <= 64 {
+			// Compare r with |d|-r without widening a word-sized remainder.
 			value := remainder.Uint64()
-			midpointComparison = cmp.Compare(value, denominatorMagnitude-value)
+			if denominator.Sign() > 0 {
+				remainder.Sub(denominator, remainder)
+			} else {
+				remainder.Add(denominator, remainder)
+				remainder.Neg(remainder)
+			}
+			midpointComparison = cmp.Compare(value, remainder.Uint64())
 		} else {
 			remainder.Lsh(remainder, 1)
 			midpointComparison = remainder.CmpAbs(denominator)
