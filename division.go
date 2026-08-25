@@ -299,7 +299,13 @@ func divisionTargetScale(dividendScale, divisorScale Scale, ratioExponent int64,
 // divideCoefficientAtScale divides borrowed non-zero coefficient pairs at
 // exactly scale, stores the quotient in z, and reports whether it was exact.
 func divideCoefficientAtScale(z *big.Int, dividend, divisor scaledCoefficient, scale Scale, mode RoundingMode) (bool, error) {
-	shift := divisionScaleShift(dividend, divisor, scale)
+	// Determine which side of the coefficient ratio must be multiplied by a
+	// power of ten to produce the requested quotient scale.
+	var scaleShift scaleAccumulator
+	scaleShift.add(scale)
+	scaleShift.add(divisor.scale)
+	scaleShift.sub(dividend.scale)
+	shift := scaleShift.coefficientShift()
 	numerator := dividend.coefficient
 	denominator := divisor.coefficient
 	var numeratorStorage, denominatorStorage big.Int
@@ -352,14 +358,4 @@ func divideCoefficientAtScale(z *big.Int, dividend, divisor scaledCoefficient, s
 		return false, err
 	}
 	return exact, nil
-}
-
-// divisionScaleShift determines which side of a coefficient ratio must be
-// multiplied by a power of ten to produce the requested quotient scale.
-func divisionScaleShift(dividend, divisor scaledCoefficient, scale Scale) coefficientScaleShift {
-	var shift scaleAccumulator
-	shift.add(scale)
-	shift.add(divisor.scale)
-	shift.sub(dividend.scale)
-	return shift.coefficientShift()
 }
