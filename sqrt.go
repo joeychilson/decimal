@@ -66,7 +66,7 @@ func sqrtToPrecision(x Decimal, precision uint, mode RoundingMode) (Decimal, err
 		return makeDecimal(coefficient, rootScale), nil
 	}
 	if exact, ok := smallExactSquareRoot(coefficient, scale); ok {
-		return roundToPrecision(exact, precision, mode)
+		return exact.Round(precision, mode)
 	}
 
 	targetScale, err := squareRootTargetScale(coefficient, scale, precision)
@@ -90,7 +90,7 @@ func sqrtToPrecision(x Decimal, precision uint, mode RoundingMode) (Decimal, err
 	if shift.exponent >= uint64(len(smallPowersOfTen)) && !coefficient.IsUint64() {
 		exact, exactErr := x.Sqrt()
 		if exactErr == nil {
-			return roundToPrecision(exact, precision, mode)
+			return exact.Round(precision, mode)
 		}
 		if mode == Exact || !errors.Is(exactErr, ErrInexact) {
 			return Decimal{}, exactErr
@@ -226,7 +226,7 @@ func squareRootTargetScale(coefficient *big.Int, scale Scale, precision uint) (S
 func squareRootAtRangeLimit(x Decimal, precision uint, mode RoundingMode) (Decimal, error) {
 	exact, err := x.Sqrt()
 	if err == nil {
-		return roundToPrecision(exact, precision, mode)
+		return exact.Round(precision, mode)
 	}
 	if mode == Exact || !errors.Is(err, ErrInexact) {
 		return Decimal{}, err

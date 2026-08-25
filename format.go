@@ -157,7 +157,7 @@ func formatDecimal(d Decimal, state fmt.State, verb rune) ([]byte, bool) {
 		if !hasPrecision {
 			precision = 6
 		}
-		rounded, err := roundToPrecision(d, uint(precision+1), HalfEven)
+		rounded, err := d.Round(uint(precision+1), HalfEven)
 		if err != nil {
 			return []byte("%!" + string(verb) + "(decimal.Decimal=" + d.String() + ")"), false
 		}
@@ -176,7 +176,7 @@ func formatDecimal(d Decimal, state fmt.State, verb rune) ([]byte, bool) {
 			}
 			exponentLimit = precision
 			var err error
-			rounded, err = roundToPrecision(d, uint(precision), HalfEven)
+			rounded, err = d.Round(uint(precision), HalfEven)
 			if err != nil {
 				return []byte("%!" + string(verb) + "(decimal.Decimal=" + d.String() + ")"), false
 			}

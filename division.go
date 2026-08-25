@@ -192,7 +192,7 @@ func divideToPrecision(x, y Decimal, precision uint, mode RoundingMode) (Decimal
 	if err != nil {
 		exact, exactErr := x.Div(y)
 		if exactErr == nil {
-			return roundToPrecision(exact, precision, mode)
+			return exact.Round(precision, mode)
 		}
 		if mode == Exact || !errors.Is(exactErr, ErrInexact) {
 			return Decimal{}, exactErr

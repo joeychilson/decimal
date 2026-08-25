@@ -42,10 +42,7 @@ func (c Context) Validate() error {
 // when c has unlimited precision. Round may return [ErrInvalidRoundingMode],
 // [ErrInexact], or [ErrRange].
 func (c Context) Round(x Decimal) (Decimal, error) {
-	if err := c.Validate(); err != nil {
-		return Decimal{}, err
-	}
-	return roundToPrecision(x, c.Precision, c.Rounding)
+	return x.Round(c.Precision, c.Rounding)
 }
 
 // Add returns x+y, rounded once according to c. It may return
@@ -257,7 +254,7 @@ func addToPrecision(x, y Decimal, precision uint, mode RoundingMode) (Decimal, e
 func roundWithPreferredScale(d Decimal, preferredScale Scale, precision uint, mode RoundingMode) (Decimal, error) {
 	coefficient, scale := decimalParts(d)
 	if preferredScale == scale {
-		return roundToPrecision(d, precision, mode)
+		return d.Round(precision, mode)
 	}
 	return roundCoefficientWithPreferredScale(nil, coefficient, scale, preferredScale, precision, mode)
 }

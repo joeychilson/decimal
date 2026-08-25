@@ -90,7 +90,15 @@ func (d Decimal) Round(precision uint, mode RoundingMode) (Decimal, error) {
 	if mode > Exact {
 		return Decimal{}, ErrInvalidRoundingMode
 	}
-	return roundToPrecision(d, precision, mode)
+	if precision == 0 {
+		return d, nil
+	}
+	coefficient, scale := decimalParts(d)
+	digits := uint(decimalDigitCount(coefficient))
+	if digits <= precision {
+		return d, nil
+	}
+	return roundCoefficient(new(big.Int).Set(coefficient), scale, digits, precision, mode)
 }
 
 // Trunc returns d rounded toward zero at scale zero.
@@ -118,20 +126,6 @@ func (d Decimal) Ceil() Decimal {
 		panic(err)
 	}
 	return result
-}
-
-// roundToPrecision removes coefficient digits in one operation so that a
-// context never double-rounds an intermediate result.
-func roundToPrecision(d Decimal, precision uint, mode RoundingMode) (Decimal, error) {
-	if precision == 0 {
-		return d, nil
-	}
-	coefficient, scale := decimalParts(d)
-	digits := uint(decimalDigitCount(coefficient))
-	if digits <= precision {
-		return d, nil
-	}
-	return roundCoefficient(new(big.Int).Set(coefficient), scale, digits, precision, mode)
 }
 
 // roundCoefficient removes coefficient digits and rounds once at the resulting
