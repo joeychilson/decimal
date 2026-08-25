@@ -321,20 +321,17 @@ func addNonzeroPartsToPrecision(x, y scaledCoefficient, precision uint, mode Rou
 }
 
 type additionPlan struct {
-	alignExactly   bool
-	dominantScale  Scale
-	targetScale    Scale
-	preferredScale Scale
+	alignExactly  bool
+	dominantScale Scale
+	targetScale   Scale
 }
 
 // planAdditionToPrecision chooses exact alignment when its cost is bounded;
 // otherwise it establishes the dominant operand and working scale needed for
 // bounded addition.
 func planAdditionToPrecision(x, y scaledCoefficient, precision uint, mode RoundingMode) (additionPlan, error) {
-	exactPlan := additionPlan{
-		alignExactly:   true,
-		preferredScale: max(x.scale, y.scale),
-	}
+	preferredScale := max(x.scale, y.scale)
+	exactPlan := additionPlan{alignExactly: true}
 	if precision == 0 {
 		return exactPlan, nil
 	}
@@ -352,10 +349,7 @@ func planAdditionToPrecision(x, y scaledCoefficient, precision uint, mode Roundi
 		return additionPlan{}, ErrInexact
 	}
 
-	plan := additionPlan{
-		dominantScale:  x.scale,
-		preferredScale: exactPlan.preferredScale,
-	}
+	plan := additionPlan{dominantScale: x.scale}
 	xExponent, xExponentOK := adjustedExponentScale(x.coefficient, x.scale)
 	yExponent, yExponentOK := adjustedExponentScale(y.coefficient, y.scale)
 	if xExponentOK && yExponentOK && uint64(precision-1) <= uint64(math.MaxInt64) {
@@ -404,7 +398,7 @@ func planAdditionToPrecision(x, y scaledCoefficient, precision uint, mode Roundi
 		}
 		plan.targetScale = Scale(target.Int64())
 	}
-	if plan.preferredScale <= plan.targetScale {
+	if preferredScale <= plan.targetScale {
 		return exactPlan, nil
 	}
 	return plan, nil
