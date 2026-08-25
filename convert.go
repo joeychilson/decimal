@@ -179,10 +179,7 @@ func (d Decimal) Float64() (value float64, exact bool) {
 
 func fromBigRatExact(x *big.Rat) (Decimal, error) {
 	result, err := divideExact(NewBig(x.Num(), 0), NewBig(x.Denom(), 0))
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result.Canonical(), nil
+	return result.Canonical(), err
 }
 
 func integerCoefficient(d Decimal) (*big.Int, error) {
