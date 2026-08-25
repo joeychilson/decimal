@@ -100,7 +100,7 @@ func TestContextPower_MatchesExactPowerRounding(t *testing.T) {
 	for coefficient := int64(-17); coefficient <= 17; coefficient++ {
 		for scale := Scale(-2); scale <= 2; scale++ {
 			base := New(coefficient, scale)
-			for exponent := int64(0); exponent <= 10; exponent++ {
+			for exponent := range int64(11) {
 				exact, err := base.Pow(exponent)
 				if err != nil {
 					t.Fatalf("Pow(%s, %d): %v", base, exponent, err)
@@ -167,6 +167,7 @@ func TestContextPower_BoundsIntermediateCoefficient(t *testing.T) {
 	var got Decimal
 	var gotErr error
 	measurement := testing.Benchmark(func(b *testing.B) {
+		b.Helper()
 		b.ReportAllocs()
 		for b.Loop() {
 			got, gotErr = ctx.Pow(base, 1_000_000)

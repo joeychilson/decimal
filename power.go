@@ -83,7 +83,7 @@ func powPositiveToPrecision(d Decimal, exponent uint64, precision uint, mode Rou
 	}
 	lastNonzeroDigit := int(text[len(text)-1-baseTrailingZeros] - '0')
 
-	maximumInt := uint(^uint(0) >> 1)
+	maximumInt := ^uint(0) >> 1
 	guardDigits := uint(max(16, 2*bits.Len64(exponent)))
 	for {
 		if precision > maximumInt-guardDigits {
