@@ -3,7 +3,6 @@ package decimal
 import (
 	"cmp"
 	"hash/maphash"
-	"math/big"
 )
 
 // Cmp compares d and x numerically and returns -1, 0, or +1. It returns zero
@@ -22,27 +21,16 @@ func (d Decimal) Cmp(x Decimal) int {
 	if ds == xs {
 		return dc.Cmp(xc)
 	}
-	dExponent, dExponentOK := adjustedExponentScale(dc, ds)
-	xExponent, xExponentOK := adjustedExponentScale(xc, xs)
-	var exponentComparison int
-	if dExponentOK && xExponentOK {
-		exponentComparison = cmp.Compare(dExponent, xExponent)
-	} else {
-		var dExponentValue, xExponentValue big.Int
-		setAdjustedExponent(&dExponentValue, dc, ds)
-		setAdjustedExponent(&xExponentValue, xc, xs)
-		exponentComparison = dExponentValue.Cmp(&xExponentValue)
-	}
-	if exponentComparison != 0 {
-		if dSign < 0 {
-			return -exponentComparison
-		}
-		return exponentComparison
-	}
+	var comparison int
 	if ds > xs {
-		return dc.Cmp(multiplyByPowerOfTen(new(big.Int), xc, scaleDistance(ds, xs)))
+		comparison = compareScaledByPowerOfTen(dc, xc, scaleDistance(ds, xs))
+	} else {
+		comparison = -compareScaledByPowerOfTen(xc, dc, scaleDistance(xs, ds))
 	}
-	return multiplyByPowerOfTen(new(big.Int), dc, scaleDistance(xs, ds)).Cmp(xc)
+	if dSign < 0 {
+		return -comparison
+	}
+	return comparison
 }
 
 // Equal reports whether d and x have the same numeric value. It is equivalent
