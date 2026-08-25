@@ -194,9 +194,6 @@ func (d Decimal) Scale() Scale {
 // of zero is 1.
 func (d Decimal) Precision() uint {
 	coefficient, _ := decimalParts(d)
-	if coefficient.Sign() == 0 {
-		return 1
-	}
 	return uint(decimalDigitCount(coefficient))
 }
 
