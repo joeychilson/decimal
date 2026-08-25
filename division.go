@@ -163,15 +163,12 @@ func divideToPrecision(x, y Decimal, precision uint, mode RoundingMode) (Decimal
 }
 
 // decimalPrimeFactorDigits reports the number of decimal places sufficient to
-// divide by a machine-word integer whose prime factors are limited to 2 and 5.
+// divide by a non-zero machine-word integer whose prime factors are limited to 2 and 5.
 func decimalPrimeFactorDigits(x *big.Int) (uint64, bool) {
 	if x.BitLen() > 64 {
 		return 0, false
 	}
 	remaining := x.Uint64()
-	if remaining == 0 {
-		return 0, false
-	}
 	twos := uint64(bits.TrailingZeros64(remaining))
 	remaining >>= twos
 	var fives uint64
