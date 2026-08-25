@@ -452,11 +452,6 @@ func addAtScale(x, y scaledCoefficient, dominantScale, target Scale, mode Roundi
 // scale lies in [lower, upper]. For a non-integral scaled value, both bounds are
 // strict; for an integral value they are equal.
 func decimalBoundsAtScale(lower, upper *big.Int, value scaledCoefficient, scale Scale) {
-	if value.coefficient.Sign() == 0 {
-		lower.SetInt64(0)
-		upper.SetInt64(0)
-		return
-	}
 	if scale >= value.scale {
 		multiplyByPowerOfTen(lower, value.coefficient, scaleDistance(scale, value.scale))
 		upper.Set(lower)
