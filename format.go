@@ -141,7 +141,7 @@ func formatDecimal(d Decimal, state fmt.State, verb rune) ([]byte, bool) {
 			return []byte("%!" + string(verb) + "(decimal.Decimal=" + d.String() + ")"), false
 		}
 		negative := d.IsNegative()
-		rounded, err := rescale(d, Scale(precision), HalfEven)
+		rounded, err := d.Rescale(Scale(precision), HalfEven)
 		if err != nil {
 			return []byte("%!" + string(verb) + "(decimal.Decimal=" + d.String() + ")"), false
 		}
@@ -198,7 +198,7 @@ func formatDecimal(d Decimal, state fmt.State, verb rune) ([]byte, bool) {
 
 		exponentValue := exponent.Int64()
 		fractional := max(int64(precision)-exponentValue-1, 0)
-		fixed, err := rescale(rounded, Scale(fractional), HalfEven)
+		fixed, err := rounded.Rescale(Scale(fractional), HalfEven)
 		if err != nil {
 			return []byte("%!" + string(verb) + "(decimal.Decimal=" + d.String() + ")"), false
 		}

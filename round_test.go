@@ -313,6 +313,32 @@ var (
 	errRoundBenchmark     error
 )
 
+func BenchmarkRescale(b *testing.B) {
+	for _, test := range []struct {
+		name  string
+		value Decimal
+		scale Scale
+		mode  RoundingMode
+	}{
+		{"unchanged", MustParse("123.45"), 2, HalfEven},
+		{"zero_scale_change", New(0, 5), 2, HalfEven},
+		{"increase_scale", MustParse("123.45"), 6, HalfEven},
+		{"exact_decrease", MustParse("123.4500"), 2, Exact},
+		{"rounded_decrease", MustParse("123.455"), 2, HalfEven},
+		{"discard_beyond_digits", MustParse("0.001"), 0, AwayFromZero},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				roundBenchmarkDecimal, errRoundBenchmark = test.value.Rescale(test.scale, test.mode)
+			}
+			if errRoundBenchmark != nil {
+				b.Fatal(errRoundBenchmark)
+			}
+		})
+	}
+}
+
 func BenchmarkRoundChunkBoundary(b *testing.B) {
 	chunkDigits := decimalWordDigits
 	for _, remove := range []int{chunkDigits, chunkDigits + 1, 4 * chunkDigits, 4*chunkDigits + 1} {

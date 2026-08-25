@@ -79,7 +79,38 @@ func (d Decimal) Rescale(scale Scale, mode RoundingMode) (Decimal, error) {
 	if mode > Exact {
 		return Decimal{}, ErrInvalidRoundingMode
 	}
-	return rescale(d, scale, mode)
+	coefficient, current := decimalParts(d)
+	if scale == current {
+		return d, nil
+	}
+	if coefficient.Sign() == 0 {
+		return makeDecimal(coefficient, scale), nil
+	}
+	if scale > current {
+		result := multiplyByPowerOfTen(new(big.Int), coefficient, scaleDistance(scale, current))
+		return makeDecimal(result, scale), nil
+	}
+
+	discard := scaleDistance(current, scale)
+	digits := uint64(decimalDigitCount(coefficient))
+	if discard > digits {
+		if mode == Exact {
+			return Decimal{}, ErrInexact
+		}
+		result := new(big.Int)
+		if mode == AwayFromZero || mode == ZeroFiveUp || mode == Ceiling && coefficient.Sign() > 0 || mode == Floor && coefficient.Sign() < 0 {
+			result.SetInt64(int64(coefficient.Sign()))
+		}
+		return makeDecimal(result, scale), nil
+	}
+
+	var denominator, quotient, remainder big.Int
+	setPowerOfTen(&denominator, discard)
+	quotient.QuoRem(coefficient, &denominator, &remainder)
+	if err := roundQuotient(&quotient, &remainder, &denominator, mode); err != nil {
+		return Decimal{}, err
+	}
+	return makeDecimal(&quotient, scale), nil
 }
 
 // Round returns d rounded to at most precision significant digits using mode.
@@ -103,7 +134,7 @@ func (d Decimal) Round(precision uint, mode RoundingMode) (Decimal, error) {
 
 // Trunc returns d rounded toward zero at scale zero.
 func (d Decimal) Trunc() Decimal {
-	result, err := rescale(d, 0, TowardZero)
+	result, err := d.Rescale(0, TowardZero)
 	if err != nil {
 		panic(err)
 	}
@@ -112,7 +143,7 @@ func (d Decimal) Trunc() Decimal {
 
 // Floor returns the greatest scale-zero Decimal less than or equal to d.
 func (d Decimal) Floor() Decimal {
-	result, err := rescale(d, 0, Floor)
+	result, err := d.Rescale(0, Floor)
 	if err != nil {
 		panic(err)
 	}
@@ -121,7 +152,7 @@ func (d Decimal) Floor() Decimal {
 
 // Ceil returns the least scale-zero Decimal greater than or equal to d.
 func (d Decimal) Ceil() Decimal {
-	result, err := rescale(d, 0, Ceiling)
+	result, err := d.Rescale(0, Ceiling)
 	if err != nil {
 		panic(err)
 	}
@@ -296,43 +327,6 @@ func roundingIncrement(mode RoundingMode, sign, midpointComparison int, coeffici
 	default:
 		panic("decimal: invalid rounding mode")
 	}
-}
-
-// rescale performs the package's single fixed-scale rounding operation. Other
-// rounded operations reduce to this form or use the equivalent integer kernel.
-func rescale(d Decimal, scale Scale, mode RoundingMode) (Decimal, error) {
-	coefficient, current := decimalParts(d)
-	if scale == current {
-		return d, nil
-	}
-	if coefficient.Sign() == 0 {
-		return makeDecimal(coefficient, scale), nil
-	}
-	if scale > current {
-		result := multiplyByPowerOfTen(new(big.Int), coefficient, scaleDistance(scale, current))
-		return makeDecimal(result, scale), nil
-	}
-
-	discard := scaleDistance(current, scale)
-	digits := uint64(decimalDigitCount(coefficient))
-	if discard > digits {
-		if mode == Exact {
-			return Decimal{}, ErrInexact
-		}
-		result := new(big.Int)
-		if mode == AwayFromZero || mode == ZeroFiveUp || mode == Ceiling && coefficient.Sign() > 0 || mode == Floor && coefficient.Sign() < 0 {
-			result.SetInt64(int64(coefficient.Sign()))
-		}
-		return makeDecimal(result, scale), nil
-	}
-
-	var denominator, quotient, remainder big.Int
-	setPowerOfTen(&denominator, discard)
-	quotient.QuoRem(coefficient, &denominator, &remainder)
-	if err := roundQuotient(&quotient, &remainder, &denominator, mode); err != nil {
-		return Decimal{}, err
-	}
-	return makeDecimal(&quotient, scale), nil
 }
 
 // roundCoefficientToPrecision rounds an owned coefficient and transfers its

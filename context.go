@@ -475,7 +475,7 @@ func addAtScale(x, y scaledCoefficient, dominantScale, target Scale, mode Roundi
 		lower.Add(&xLower, &yLower)
 		upper.Add(&xUpper, &yUpper)
 		if lower.Cmp(&upper) == 0 {
-			return rescale(makeDecimal(&lower, workScale), target, mode)
+			return makeDecimal(&lower, workScale).Rescale(target, mode)
 		}
 
 		// Convert the open integer bounds to exact half-unit numerators. If
