@@ -174,10 +174,9 @@ func smallExactSquareRoot(coefficient *big.Int, scale Scale) (Decimal, bool) {
 		} else {
 			if value <= math.MaxUint64/10 {
 				value *= 10
+			} else if value%10 != 0 {
+				return Decimal{}, false
 			} else {
-				if value%10 != 0 {
-					return Decimal{}, false
-				}
 				value /= 10
 				rootMultiplier = 10
 			}
