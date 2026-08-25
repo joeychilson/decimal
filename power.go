@@ -31,8 +31,7 @@ func powToPrecision(d Decimal, n int64, precision uint, mode RoundingMode) (Deci
 	if err != nil {
 		return Decimal{}, err
 	}
-	denominator := makeDecimal(coefficient, scale)
-	return divideToPrecision(FromInt(1), denominator, precision, mode)
+	return divideToPrecision(FromInt(1), makeDecimal(coefficient, scale), precision, mode)
 }
 
 // powPositiveParts returns a caller-owned coefficient and exact fitted scale
