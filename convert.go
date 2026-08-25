@@ -137,8 +137,7 @@ func (d Decimal) Float[T Float]() (value T, exact bool) {
 	if coefficient.Sign() == 0 {
 		return 0, true
 	}
-	digits := Scale(decimalDigitCount(coefficient) - 1)
-	exponent, ok := subtractScales(digits, scale)
+	exponent, ok := subtractScales(Scale(decimalDigitCount(coefficient)-1), scale)
 	if !ok {
 		if scale < 0 {
 			return T(math.Inf(coefficient.Sign())), false
