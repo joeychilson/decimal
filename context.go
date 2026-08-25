@@ -138,24 +138,7 @@ func (c Context) Pow(x Decimal, n int64) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	if n >= 0 {
-		coefficient, scale, err := powPositiveParts(x, uint64(n))
-		if err != nil {
-			return Decimal{}, err
-		}
-		return roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
-	}
-	if x.IsZero() {
-		return Decimal{}, ErrDivisionByZero
-	}
-
-	magnitude := uint64(-(n + 1)) + 1
-	coefficient, scale, err := powPositiveParts(x, magnitude)
-	if err != nil {
-		return Decimal{}, err
-	}
-	denominator := makeDecimal(coefficient, scale)
-	return divideToPrecision(FromInt(1), denominator, c.Precision, c.Rounding)
+	return powToPrecision(x, n, c.Precision, c.Rounding)
 }
 
 // FromBigRat converts x to a Decimal under c. With unlimited precision, it

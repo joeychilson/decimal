@@ -11,12 +11,16 @@ import (
 // power. It returns [ErrRange] if the result's scale cannot be represented. Use
 // [Context.Pow] for rounded powers.
 func (d Decimal) Pow(n int64) (Decimal, error) {
+	return powToPrecision(d, n, 0, HalfEven)
+}
+
+func powToPrecision(d Decimal, n int64, precision uint, mode RoundingMode) (Decimal, error) {
 	if n >= 0 {
 		coefficient, scale, err := powPositiveParts(d, uint64(n))
 		if err != nil {
 			return Decimal{}, err
 		}
-		return makeDecimal(coefficient, scale), nil
+		return roundCoefficientToPrecision(coefficient, scale, precision, mode)
 	}
 	if d.IsZero() {
 		return Decimal{}, ErrDivisionByZero
@@ -27,7 +31,7 @@ func (d Decimal) Pow(n int64) (Decimal, error) {
 		return Decimal{}, err
 	}
 	denominator := makeDecimal(coefficient, scale)
-	return divideExact(FromInt(1), denominator)
+	return divideToPrecision(FromInt(1), denominator, precision, mode)
 }
 
 // powPositiveParts returns a caller-owned coefficient and exact fitted scale
