@@ -261,7 +261,10 @@ func addNonzeroPartsToPrecision(x, y scaledCoefficient, precision uint, mode Rou
 		return Decimal{}, err
 	}
 	if plan.alignExactly {
-		return addAlignedPartsToPrecision(x, y, precision, mode)
+		var coefficient big.Int
+		xCoefficient, yCoefficient, scale := alignedParts(&coefficient, x, y)
+		coefficient.Add(xCoefficient, yCoefficient)
+		return roundCoefficientToPrecision(&coefficient, scale, precision, mode)
 	}
 	if mode == ZeroFiveUp && precision == 1 && x.coefficient.Sign() != y.coefficient.Sign() {
 		dominant := x
@@ -402,15 +405,6 @@ func planAdditionToPrecision(x, y scaledCoefficient, precision uint, mode Roundi
 		return exactPlan, nil
 	}
 	return plan, nil
-}
-
-// addAlignedPartsToPrecision aligns two coefficients exactly and rounds their
-// sum. The coefficient passed to the rounding kernel is always caller-owned.
-func addAlignedPartsToPrecision(x, y scaledCoefficient, precision uint, mode RoundingMode) (Decimal, error) {
-	var coefficient big.Int
-	xCoefficient, yCoefficient, scale := alignedParts(&coefficient, x, y)
-	coefficient.Add(xCoefficient, yCoefficient)
-	return roundCoefficientToPrecision(&coefficient, scale, precision, mode)
 }
 
 // addAtScale rounds x+y to target using open integer bounds at a nearby guard
