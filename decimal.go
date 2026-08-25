@@ -480,10 +480,14 @@ func (a *scaleAccumulator) coefficientShift() coefficientScaleShift {
 		}
 	}
 
-	// coefficientScaleShiftFromBig negates a negative shift in place.
-	var shift big.Int
-	shift.Set(&a.large)
-	return coefficientScaleShiftFromBig(&shift)
+	result := coefficientScaleShift{scaleNumerator: a.large.Sign() >= 0}
+	var magnitude big.Int
+	magnitude.Abs(&a.large)
+	if magnitude.IsUint64() {
+		result.exponent = magnitude.Uint64()
+		result.exponentFits = true
+	}
+	return result
 }
 
 // fitCoefficientScale moves powers of ten between an owned coefficient and
@@ -547,20 +551,6 @@ func scaleMagnitude(scale Scale) uint64 {
 		return uint64(scale)
 	}
 	return uint64(-(scale + 1)) + 1
-}
-
-// coefficientScaleShiftFromBig classifies a caller-owned signed shift and
-// reports whether its magnitude fits the exponent type used by math/big.
-func coefficientScaleShiftFromBig(shift *big.Int) coefficientScaleShift {
-	result := coefficientScaleShift{scaleNumerator: shift.Sign() >= 0}
-	if !result.scaleNumerator {
-		shift.Neg(shift)
-	}
-	if shift.IsUint64() {
-		result.exponent = shift.Uint64()
-		result.exponentFits = true
-	}
-	return result
 }
 
 // compareScaledByPowerOfTen compares |x| with |y|*10^exponent without
