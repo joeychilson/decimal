@@ -358,8 +358,7 @@ func multiplyByPowerOfTen(z, x *big.Int, exponent uint64) *big.Int {
 }
 
 func adjustedExponentScale(coefficient *big.Int, scale Scale) (Scale, bool) {
-	digits := Scale(decimalDigitCount(coefficient) - 1)
-	return subtractScales(digits, scale)
+	return subtractScales(Scale(decimalDigitCount(coefficient)-1), scale)
 }
 
 // subtractScales returns x-y and reports whether the result fits Scale. On
