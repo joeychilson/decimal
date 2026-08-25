@@ -113,6 +113,25 @@ func (d Decimal) Rescale(scale Scale, mode RoundingMode) (Decimal, error) {
 	return makeDecimal(&quotient, scale), nil
 }
 
+// RoundToMultiple returns d rounded to an integral multiple of increment using
+// mode. The result has the same scale as increment. Increment must be positive;
+// otherwise RoundToMultiple returns [ErrInvalidOperation]. With Exact mode, it
+// returns [ErrInexact] unless d is already an integral multiple of increment.
+// It returns [ErrInvalidRoundingMode] for an unknown mode.
+func (d Decimal) RoundToMultiple(increment Decimal, mode RoundingMode) (Decimal, error) {
+	if mode > Exact {
+		return Decimal{}, ErrInvalidRoundingMode
+	}
+	if increment.Sign() <= 0 {
+		return Decimal{}, ErrInvalidOperation
+	}
+	quotient, err := d.DivScale(increment, 0, mode)
+	if err != nil {
+		return Decimal{}, err
+	}
+	return quotient.Mul(increment)
+}
+
 // Round returns d rounded to at most precision significant digits using mode.
 // A precision of zero leaves d unchanged. With Exact mode, Round returns
 // [ErrInexact] instead of changing the value. Round may also return

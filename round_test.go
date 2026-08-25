@@ -2,6 +2,7 @@ package decimal
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"strconv"
@@ -112,6 +113,71 @@ func TestRescale_HandlesExtremeScaleShortcuts(t *testing.T) {
 	if got, err := FromInt(-1).Rescale(Scale(math.MinInt64), Floor); err != nil || got.Coefficient().Cmp(big.NewInt(-1)) != 0 {
 		t.Fatalf("extreme Floor rescale = coefficient %s, %v", got.Coefficient(), err)
 	}
+}
+
+func TestRoundToMultiple_AppliesRoundingModesAndPreservesIncrementScale(t *testing.T) {
+	tests := []struct {
+		mode         RoundingMode
+		wantPositive string
+		wantNegative string
+	}{
+		{HalfEven, "3.40", "-3.40"},
+		{HalfUp, "3.45", "-3.45"},
+		{HalfDown, "3.40", "-3.40"},
+		{TowardZero, "3.40", "-3.40"},
+		{AwayFromZero, "3.45", "-3.45"},
+		{Floor, "3.40", "-3.45"},
+		{Ceiling, "3.45", "-3.40"},
+		{ZeroFiveUp, "3.40", "-3.40"},
+	}
+	increment := MustParse("0.05")
+	for _, test := range tests {
+		t.Run(test.mode.String(), func(t *testing.T) {
+			positive, positiveErr := MustParse("3.425").RoundToMultiple(increment, test.mode)
+			if positiveErr != nil || positive.String() != test.wantPositive {
+				t.Errorf("positive result = %s, %v; want %s", positive, positiveErr, test.wantPositive)
+			}
+			negative, negativeErr := MustParse("-3.425").RoundToMultiple(increment, test.mode)
+			if negativeErr != nil || negative.String() != test.wantNegative {
+				t.Errorf("negative result = %s, %v; want %s", negative, negativeErr, test.wantNegative)
+			}
+		})
+	}
+
+	result, err := MustParse("3.4500").RoundToMultiple(MustParse("0.050"), Exact)
+	if err != nil || result.String() != "3.450" {
+		t.Fatalf("exact result = %s, %v; want 3.450", result, err)
+	}
+	zero, err := (Decimal{}).RoundToMultiple(MustParse("0.050"), HalfEven)
+	if err != nil || zero.String() != "0.000" {
+		t.Fatalf("zero result = %s, %v; want 0.000", zero, err)
+	}
+}
+
+func TestRoundToMultiple_ReportsInvalidInputs(t *testing.T) {
+	value := MustParse("3.43")
+	if _, err := value.RoundToMultiple(MustParse("0.05"), Exact); !errors.Is(err, ErrInexact) {
+		t.Fatalf("Exact error = %v, want ErrInexact", err)
+	}
+	for _, increment := range []Decimal{{}, MustParse("-0.05")} {
+		if _, err := value.RoundToMultiple(increment, HalfEven); !errors.Is(err, ErrInvalidOperation) {
+			t.Errorf("increment %s error = %v, want ErrInvalidOperation", increment, err)
+		}
+	}
+	if _, err := value.RoundToMultiple(MustParse("0.05"), RoundingMode(255)); !errors.Is(err, ErrInvalidRoundingMode) {
+		t.Fatalf("invalid mode error = %v, want ErrInvalidRoundingMode", err)
+	}
+}
+
+func ExampleDecimal_RoundToMultiple() {
+	amount, err := MustParse("3.43").RoundToMultiple(MustParse("0.05"), HalfUp)
+	if err != nil {
+		fmt.Println("round:", err)
+		return
+	}
+
+	fmt.Println(amount)
+	// Output: 3.45
 }
 
 func TestRound_MatchesRationalOracleAcrossChunkBoundaries(t *testing.T) {
@@ -336,6 +402,18 @@ func BenchmarkRescale(b *testing.B) {
 				b.Fatal(errRoundBenchmark)
 			}
 		})
+	}
+}
+
+func BenchmarkRoundToMultiple(b *testing.B) {
+	value := MustParse("123.43")
+	increment := MustParse("0.05")
+	b.ReportAllocs()
+	for b.Loop() {
+		roundBenchmarkDecimal, errRoundBenchmark = value.RoundToMultiple(increment, HalfEven)
+	}
+	if errRoundBenchmark != nil {
+		b.Fatal(errRoundBenchmark)
 	}
 }
 
