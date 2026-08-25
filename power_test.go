@@ -95,6 +95,109 @@ func TestPower_MatchesRepeatedMultiplicationAndRationals(t *testing.T) {
 	}
 }
 
+func TestContextPower_MatchesExactPowerRounding(t *testing.T) {
+	modes := [...]RoundingMode{HalfEven, HalfUp, HalfDown, TowardZero, AwayFromZero, Floor, Ceiling, ZeroFiveUp, Exact}
+	for coefficient := int64(-17); coefficient <= 17; coefficient++ {
+		for scale := Scale(-2); scale <= 2; scale++ {
+			base := New(coefficient, scale)
+			for exponent := int64(0); exponent <= 10; exponent++ {
+				exact, err := base.Pow(exponent)
+				if err != nil {
+					t.Fatalf("Pow(%s, %d): %v", base, exponent, err)
+				}
+				for precision := uint(1); precision <= 8; precision++ {
+					for _, mode := range modes {
+						ctx := Context{Precision: precision, Rounding: mode}
+						want, wantErr := ctx.Round(exact)
+						got, gotErr := ctx.Pow(base, exponent)
+						if wantErr != nil {
+							if !errors.Is(gotErr, wantErr) {
+								t.Fatalf("Context{%d, %s}.Pow(%s, %d) error = %v; want %v", precision, mode, base, exponent, gotErr, wantErr)
+							}
+							continue
+						}
+						if gotErr != nil || !got.SameRepresentation(want) {
+							t.Fatalf("Context{%d, %s}.Pow(%s, %d) = %s [scale %d], %v; want %s [scale %d]", precision, mode, base, exponent, got, got.Scale(), gotErr, want, want.Scale())
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestContextPower_MatchesExactRoundingForLargeCoefficients(t *testing.T) {
+	trailingZeros := new(big.Int).Mul(big.NewInt(12_345), setPowerOfTen(new(big.Int), 100))
+	bases := [...]Decimal{
+		MustParse("123456789012345678901234567890123456789"),
+		MustParse("-987654321098765432109876543210987654321"),
+		NewBig(trailingZeros, 0),
+	}
+	modes := [...]RoundingMode{HalfEven, HalfUp, HalfDown, TowardZero, AwayFromZero, Floor, Ceiling, ZeroFiveUp, Exact}
+	precisions := [...]uint{1, 2, 5, 12, 20, 40}
+	for _, base := range bases {
+		for _, exponent := range [...]int64{2, 3, 7} {
+			exact, err := base.Pow(exponent)
+			if err != nil {
+				t.Fatalf("Pow(%s, %d): %v", base, exponent, err)
+			}
+			for _, precision := range precisions {
+				for _, mode := range modes {
+					ctx := Context{Precision: precision, Rounding: mode}
+					want, wantErr := ctx.Round(exact)
+					got, gotErr := ctx.Pow(base, exponent)
+					if wantErr != nil {
+						if !errors.Is(gotErr, wantErr) {
+							t.Fatalf("Context{%d, %s}.Pow(%s, %d) error = %v; want %v", precision, mode, base, exponent, gotErr, wantErr)
+						}
+						continue
+					}
+					if gotErr != nil || !got.SameRepresentation(want) {
+						t.Fatalf("Context{%d, %s}.Pow(%s, %d) = %s [scale %d], %v; want %s [scale %d]", precision, mode, base, exponent, got, got.Scale(), gotErr, want, want.Scale())
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestContextPower_BoundsIntermediateCoefficient(t *testing.T) {
+	ctx := Context{Precision: 20, Rounding: HalfEven}
+	base := FromInt(2)
+	var got Decimal
+	var gotErr error
+	measurement := testing.Benchmark(func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			got, gotErr = ctx.Pow(base, 1_000_000)
+		}
+	})
+
+	wantCoefficient, ok := new(big.Int).SetString("99006562292958982507", 10)
+	if !ok {
+		t.Fatal("invalid expected coefficient")
+	}
+	want := NewBig(wantCoefficient, -301_010)
+	if gotErr != nil || !got.SameRepresentation(want) {
+		t.Fatalf("Context.Pow = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), gotErr, want.Coefficient(), want.Scale())
+	}
+	if allocated := measurement.AllocedBytesPerOp(); allocated > 64<<10 {
+		t.Fatalf("Context.Pow allocated %d bytes; want at most %d", allocated, 64<<10)
+	}
+}
+
+func TestContextPower_FitsScaleBelowMinimumWithinPrecision(t *testing.T) {
+	base := New(1, Scale(math.MinInt64/2-1))
+	got, err := (Context{Precision: 3, Rounding: HalfEven}).Pow(base, 2)
+	want := New(100, Scale(math.MinInt64))
+	if err != nil || !got.SameRepresentation(want) {
+		t.Fatalf("Context.Pow = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, want.Coefficient(), want.Scale())
+	}
+	if _, err := (Context{Precision: 2, Rounding: HalfEven}).Pow(base, 2); !errors.Is(err, ErrRange) {
+		t.Fatalf("Context.Pow with insufficient precision error = %v; want ErrRange", err)
+	}
+}
+
 var (
 	powerBenchmarkDecimal Decimal
 	errPowerBenchmark     error
