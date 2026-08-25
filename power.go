@@ -3,6 +3,7 @@ package decimal
 import (
 	"math"
 	"math/big"
+	"math/bits"
 )
 
 // Pow returns d raised to the integer power n exactly. Negative powers are
@@ -55,19 +56,15 @@ func powPositiveParts(d Decimal, exponent uint64) (*big.Int, Scale, error) {
 // multiplyScale returns scale*multiplier and reports whether the result fits
 // Scale. On overflow, it returns zero and false.
 func multiplyScale(scale Scale, multiplier uint64) (Scale, bool) {
-	if scale == 0 || multiplier == 0 {
-		return 0, true
-	}
-	magnitude := scaleMagnitude(scale)
+	high, product := bits.Mul64(scaleMagnitude(scale), multiplier)
 	limit := uint64(math.MaxInt64)
 	if scale < 0 {
 		limit++
 	}
-	if magnitude > limit/multiplier {
+	if high != 0 || product > limit {
 		return 0, false
 	}
-	product := magnitude * multiplier
-	if scale > 0 {
+	if scale >= 0 {
 		return Scale(product), true
 	}
 	if product == uint64(math.MaxInt64)+1 {
