@@ -45,11 +45,7 @@ func (c Context) Round(x Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	result, err := roundToPrecision(x, c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return roundToPrecision(x, c.Precision, c.Rounding)
 }
 
 // Add returns x+y, rounded once according to c. It may return
@@ -58,11 +54,7 @@ func (c Context) Add(x, y Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	result, err := addToPrecision(x, y, c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return addToPrecision(x, y, c.Precision, c.Rounding)
 }
 
 // Sub returns x-y, rounded once according to c. It may return
@@ -71,11 +63,7 @@ func (c Context) Sub(x, y Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	result, err := addToPrecision(x, y.Neg(), c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return addToPrecision(x, y.Neg(), c.Precision, c.Rounding)
 }
 
 // Mul returns x*y, rounded once according to c. It may return
@@ -88,11 +76,7 @@ func (c Context) Mul(x, y Decimal) (Decimal, error) {
 	if err != nil {
 		return Decimal{}, err
 	}
-	result, err := roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
 }
 
 // Div returns x/y, rounded once according to c.
@@ -103,11 +87,7 @@ func (c Context) Div(x, y Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	result, err := divideToPrecision(x, y, c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return divideToPrecision(x, y, c.Precision, c.Rounding)
 }
 
 // FMA returns x*y+z with only one rounding, after the addition. It is more
@@ -125,29 +105,17 @@ func (c Context) FMA(x, y, z Decimal) (Decimal, error) {
 	zCoefficient, zScale := decimalParts(z)
 	preferredScale := max(productScale, zScale)
 	if product.Sign() == 0 {
-		result, roundErr := roundWithPreferredScale(z, preferredScale, c.Precision, c.Rounding)
-		if roundErr != nil {
-			return Decimal{}, roundErr
-		}
-		return result, nil
+		return roundWithPreferredScale(z, preferredScale, c.Precision, c.Rounding)
 	}
 	if zCoefficient.Sign() == 0 {
-		result, roundErr := roundCoefficientWithPreferredScale(product, product, productScale, preferredScale, c.Precision, c.Rounding)
-		if roundErr != nil {
-			return Decimal{}, roundErr
-		}
-		return result, nil
+		return roundCoefficientWithPreferredScale(product, product, productScale, preferredScale, c.Precision, c.Rounding)
 	}
-	result, err := addNonzeroPartsToPrecision(
+	return addNonzeroPartsToPrecision(
 		scaledCoefficient{coefficient: product, scale: productScale},
 		scaledCoefficient{coefficient: zCoefficient, scale: zScale},
 		c.Precision,
 		c.Rounding,
 	)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
 }
 
 // Sqrt returns the non-negative square root of x, rounded once according to c.
@@ -158,11 +126,7 @@ func (c Context) Sqrt(x Decimal) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	result, err := sqrtToPrecision(x, c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return sqrtToPrecision(x, c.Precision, c.Rounding)
 }
 
 // Pow returns x raised to the integer power n, rounded once according to c.
@@ -179,11 +143,7 @@ func (c Context) Pow(x Decimal, n int64) (Decimal, error) {
 		if err != nil {
 			return Decimal{}, err
 		}
-		result, err := roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
-		if err != nil {
-			return Decimal{}, err
-		}
-		return result, nil
+		return roundCoefficientToPrecision(coefficient, scale, c.Precision, c.Rounding)
 	}
 	if x.IsZero() {
 		return Decimal{}, ErrDivisionByZero
@@ -195,11 +155,7 @@ func (c Context) Pow(x Decimal, n int64) (Decimal, error) {
 		return Decimal{}, err
 	}
 	denominator := makeDecimal(coefficient, scale)
-	result, err := divideToPrecision(FromInt(1), denominator, c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return divideToPrecision(FromInt(1), denominator, c.Precision, c.Rounding)
 }
 
 // FromBigRat converts x to a Decimal under c. With unlimited precision, it
@@ -213,11 +169,7 @@ func (c Context) FromBigRat(x *big.Rat) (Decimal, error) {
 	if err := c.Validate(); err != nil {
 		return Decimal{}, err
 	}
-	result, err := divideToPrecision(NewBig(x.Num(), 0), NewBig(x.Denom(), 0), c.Precision, c.Rounding)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return result, nil
+	return divideToPrecision(NewBig(x.Num(), 0), NewBig(x.Denom(), 0), c.Precision, c.Rounding)
 }
 
 // addToPrecision adds or subtracts two values with a single final rounding.
