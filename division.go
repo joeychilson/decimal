@@ -185,101 +185,70 @@ func decimalPrimeFactorDigits(x *big.Int) (uint64, bool) {
 // divideExact reduces the coefficient ratio and accepts it only when the
 // remaining denominator contains no primes other than 2 and 5.
 func divideExact(x, y Decimal) (Decimal, error) {
-	analysis, err := analyzeDivision(x, y)
-	if err != nil {
-		return Decimal{}, err
-	}
-	return exactQuotient(&analysis)
-}
-
-// analyzeDivision reduces a coefficient ratio and records the factors needed
-// to construct an exact finite quotient.
-func analyzeDivision(x, y Decimal) (divisionAnalysis, error) {
-	var analysis divisionAnalysis
 	yCoefficient, yScale := decimalParts(y)
 	if yCoefficient.Sign() == 0 {
-		return analysis, ErrDivisionByZero
+		return Decimal{}, ErrDivisionByZero
 	}
 	xCoefficient, xScale := decimalParts(x)
-	analysis.dividendScale = xScale
-	analysis.divisorScale = yScale
-	analysis.numerator.Set(xCoefficient)
-	analysis.denominator.Set(yCoefficient)
-	if analysis.denominator.Sign() < 0 {
-		analysis.numerator.Neg(&analysis.numerator)
-		analysis.denominator.Neg(&analysis.denominator)
-	}
-	if analysis.numerator.Sign() == 0 {
-		analysis.terminating = true
-		return analysis, nil
-	}
-
-	var absoluteNumerator, gcd big.Int
-	absoluteNumerator.Abs(&analysis.numerator)
-	gcd.GCD(nil, nil, &absoluteNumerator, &analysis.denominator)
-	analysis.numerator.Quo(&analysis.numerator, &gcd)
-	analysis.denominator.Quo(&analysis.denominator, &gcd)
-
-	var remaining, quotient, remainder big.Int
-	remaining.Set(&analysis.denominator)
-	analysis.twos = uint64(remaining.TrailingZeroBits())
-	remaining.Rsh(&remaining, uint(analysis.twos))
-	for {
-		quotient.QuoRem(&remaining, bigFive, &remainder)
-		if remainder.Sign() != 0 {
-			break
-		}
-		remaining.Set(&quotient)
-		analysis.fives++
-	}
-	analysis.terminating = remaining.Cmp(bigOne) == 0
-	return analysis, nil
-}
-
-type divisionAnalysis struct {
-	numerator     big.Int
-	denominator   big.Int
-	dividendScale Scale
-	divisorScale  Scale
-	twos          uint64
-	fives         uint64
-	terminating   bool
-}
-
-// exactQuotient constructs a terminating quotient from prior division
-// analysis while preserving the operands' preferred scale.
-func exactQuotient(analysis *divisionAnalysis) (Decimal, error) {
 	var scale scaleAccumulator
-	scale.add(analysis.dividendScale)
-	scale.sub(analysis.divisorScale)
-	if analysis.numerator.Sign() == 0 {
-		resultScale, err := scale.fitCoefficient(&analysis.numerator)
+	scale.add(xScale)
+	scale.sub(yScale)
+
+	var numerator big.Int
+	numerator.Set(xCoefficient)
+	if numerator.Sign() == 0 {
+		resultScale, err := scale.fitCoefficient(&numerator)
 		if err != nil {
 			return Decimal{}, err
 		}
-		return makeDecimal(&analysis.numerator, resultScale), nil
+		return makeDecimal(&numerator, resultScale), nil
 	}
-	if !analysis.terminating {
+
+	var denominator big.Int
+	denominator.Set(yCoefficient)
+	if denominator.Sign() < 0 {
+		numerator.Neg(&numerator)
+		denominator.Neg(&denominator)
+	}
+
+	var absoluteNumerator, gcd big.Int
+	absoluteNumerator.Abs(&numerator)
+	gcd.GCD(nil, nil, &absoluteNumerator, &denominator)
+	numerator.Quo(&numerator, &gcd)
+	denominator.Quo(&denominator, &gcd)
+
+	twos := uint64(denominator.TrailingZeroBits())
+	denominator.Rsh(&denominator, uint(twos))
+	var fives uint64
+	var quotient, remainder big.Int
+	for {
+		quotient.QuoRem(&denominator, bigFive, &remainder)
+		if remainder.Sign() != 0 {
+			break
+		}
+		denominator.Set(&quotient)
+		fives++
+	}
+	if denominator.Cmp(bigOne) != 0 {
 		return Decimal{}, ErrInexact
 	}
 
-	numerator := new(big.Int).Set(&analysis.numerator)
-	digits := max(analysis.twos, analysis.fives)
-	if analysis.twos < digits {
-		numerator.Lsh(numerator, uint(digits-analysis.twos))
+	digits := max(twos, fives)
+	if twos < digits {
+		numerator.Lsh(&numerator, uint(digits-twos))
 	}
-	if analysis.fives < digits {
+	if fives < digits {
 		var exponent, factor big.Int
-		exponent.SetUint64(digits - analysis.fives)
+		exponent.SetUint64(digits - fives)
 		factor.Exp(bigFive, &exponent, nil)
-		numerator.Mul(numerator, &factor)
+		numerator.Mul(&numerator, &factor)
 	}
 	scale.addUint64(digits)
-	resultScale, err := scale.fitCoefficient(numerator)
+	resultScale, err := scale.fitCoefficient(&numerator)
 	if err != nil {
 		return Decimal{}, err
 	}
-	return makeDecimal(numerator, resultScale), nil
+	return makeDecimal(&numerator, resultScale), nil
 }
 
 // divisionTargetScale computes dividendScale-divisorScale-ratioExponent+
