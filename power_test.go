@@ -26,6 +26,7 @@ func TestPower_ReturnsExactResults(t *testing.T) {
 		{"above maximum scale", New(10, Scale(math.MaxInt64/2+1)), 2, New(10, Scale(math.MaxInt64))},
 		{"negative above maximum scale", New(-10, Scale(math.MaxInt64/3+1)), 3, New(-10, Scale(math.MaxInt64))},
 		{"below minimum scale", New(1, Scale(math.MinInt64/2-1)), 2, New(100, Scale(math.MinInt64))},
+		{"negative power with unrepresentable positive intermediate", New(1, Scale(math.MaxInt64/2+1)), -2, New(1, Scale(math.MinInt64))},
 		{"zero above maximum scale", New(0, Scale(math.MaxInt64/2+1)), 2, New(0, Scale(math.MaxInt64))},
 		{"zero below minimum scale", New(0, Scale(math.MinInt64/2-1)), 2, New(0, Scale(math.MinInt64))},
 	} {
@@ -39,6 +40,9 @@ func TestPower_ReturnsExactResults(t *testing.T) {
 	unrepresentablePower := New(1, Scale(math.MaxInt64/2+1))
 	if _, err := unrepresentablePower.Pow(2); !errors.Is(err, ErrRange) {
 		t.Fatalf("unrepresentable power error = %v", err)
+	}
+	if _, err := New(3, Scale(math.MaxInt64/2+1)).Pow(-2); !errors.Is(err, ErrInexact) {
+		t.Fatalf("non-terminating negative power error = %v, want ErrInexact", err)
 	}
 	extremeZero := New(0, Scale(math.MaxInt64))
 	if _, err := extremeZero.Pow(-2); !errors.Is(err, ErrDivisionByZero) {
@@ -126,6 +130,40 @@ func TestContextPower_MatchesExactPowerRounding(t *testing.T) {
 	}
 }
 
+func TestContextPower_NegativeExponentsMatchBigRat(t *testing.T) {
+	modes := [...]RoundingMode{HalfEven, HalfUp, HalfDown, TowardZero, AwayFromZero, Floor, Ceiling, ZeroFiveUp, Exact}
+	for coefficient := int64(-12); coefficient <= 12; coefficient++ {
+		if coefficient == 0 {
+			continue
+		}
+		for scale := Scale(-2); scale <= 2; scale++ {
+			base := New(coefficient, scale)
+			factor := base.BigRat()
+			for _, exponent := range [...]int64{1, 2, 5, 31, 67} {
+				powerNumerator := new(big.Int).Exp(factor.Num(), big.NewInt(exponent), nil)
+				powerDenominator := new(big.Int).Exp(factor.Denom(), big.NewInt(exponent), nil)
+				exact := new(big.Rat).SetFrac(powerDenominator, powerNumerator)
+				preferredScale := scale * Scale(-exponent)
+				for precision := uint(1); precision <= 8; precision++ {
+					for _, mode := range modes {
+						want, resultExact := roundRatToPrecision(exact, preferredScale, precision, mode)
+						got, gotErr := (Context{Precision: precision, Rounding: mode}).Pow(base, -exponent)
+						if mode == Exact && !resultExact {
+							if !errors.Is(gotErr, ErrInexact) {
+								t.Fatalf("Context{%d, %s}.Pow(%s, %d) error = %v; want ErrInexact", precision, mode, base, -exponent, gotErr)
+							}
+							continue
+						}
+						if gotErr != nil || !got.SameRepresentation(want) {
+							t.Fatalf("Context{%d, %s}.Pow(%s, %d) = %s [scale %d], %v; want %s [scale %d]", precision, mode, base, -exponent, got, got.Scale(), gotErr, want, want.Scale())
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestContextPower_MatchesExactRoundingForLargeCoefficients(t *testing.T) {
 	trailingZeros := new(big.Int).Mul(big.NewInt(12_345), setPowerOfTen(new(big.Int), 100))
 	bases := [...]Decimal{
@@ -196,6 +234,52 @@ func TestContextPower_FitsScaleBelowMinimumWithinPrecision(t *testing.T) {
 	}
 	if _, err := (Context{Precision: 2, Rounding: HalfEven}).Pow(base, 2); !errors.Is(err, ErrRange) {
 		t.Fatalf("Context.Pow with insufficient precision error = %v; want ErrRange", err)
+	}
+}
+
+func TestContextPower_RoundsNegativePowerAcrossScaleBoundary(t *testing.T) {
+	base := New(3, Scale(math.MaxInt64/2+1))
+	got, err := (Context{Precision: 5, Rounding: HalfEven}).Pow(base, -2)
+	want := New(11_111, Scale(math.MinInt64+5))
+	if err != nil || !got.SameRepresentation(want) {
+		t.Fatalf("Context.Pow = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), err, want.Coefficient(), want.Scale())
+	}
+}
+
+func TestContextPower_BoundsNegativePowerIntermediate(t *testing.T) {
+	ctx := Context{Precision: 20, Rounding: HalfEven}
+	for _, test := range []struct {
+		name        string
+		base        Decimal
+		coefficient string
+		scale       Scale
+	}{
+		{"terminating reciprocal", FromInt(2), "10100340591980302247", 301_049},
+		{"non-terminating reciprocal", FromInt(3), "55626320991571288659", 477_141},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var got Decimal
+			var gotErr error
+			measurement := testing.Benchmark(func(b *testing.B) {
+				b.Helper()
+				b.ReportAllocs()
+				for b.Loop() {
+					got, gotErr = ctx.Pow(test.base, -1_000_000)
+				}
+			})
+
+			wantCoefficient, ok := new(big.Int).SetString(test.coefficient, 10)
+			if !ok {
+				t.Fatal("invalid expected coefficient")
+			}
+			want := NewBig(wantCoefficient, test.scale)
+			if gotErr != nil || !got.SameRepresentation(want) {
+				t.Fatalf("Context.Pow = coefficient %s, scale %d, %v; want coefficient %s, scale %d", got.Coefficient(), got.Scale(), gotErr, want.Coefficient(), want.Scale())
+			}
+			if allocated := measurement.AllocedBytesPerOp(); allocated > 64<<10 {
+				t.Fatalf("Context.Pow allocated %d bytes; want at most %d", allocated, 64<<10)
+			}
+		})
 	}
 }
 

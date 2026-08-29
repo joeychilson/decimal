@@ -1,6 +1,7 @@
 package decimal
 
 import (
+	"errors"
 	"math"
 	"math/big"
 	"math/bits"
@@ -30,11 +31,21 @@ func powToPrecision(d Decimal, n int64, precision uint, mode RoundingMode) (Deci
 		return Decimal{}, ErrDivisionByZero
 	}
 	magnitude := uint64(-(n + 1)) + 1
-	coefficient, resultScale, err := powPositiveParts(d, magnitude)
-	if err != nil {
+	inverse, err := FromInt(1).Div(d)
+	if err == nil {
+		if precision != 0 {
+			return powPositiveToPrecision(inverse, magnitude, precision, mode)
+		}
+		coefficient, resultScale, powerErr := powPositiveParts(inverse, magnitude)
+		if powerErr != nil {
+			return Decimal{}, powerErr
+		}
+		return makeDecimal(coefficient, resultScale), nil
+	}
+	if precision == 0 || mode == Exact || !errors.Is(err, ErrInexact) {
 		return Decimal{}, err
 	}
-	return divideToPrecision(FromInt(1), makeDecimal(coefficient, resultScale), precision, mode)
+	return powNegativeToPrecision(d, magnitude, precision, mode)
 }
 
 // powPositiveParts returns a caller-owned coefficient and exact fitted scale
@@ -96,6 +107,32 @@ func powPositiveToPrecision(d Decimal, exponent uint64, precision uint, mode Rou
 		}
 		if resolved {
 			return makeRoundedPower(result, scale, exponent, remove, precision)
+		}
+		if guardDigits > maximumInt/2 {
+			return Decimal{}, ErrRange
+		}
+		guardDigits *= 2
+	}
+}
+
+func powNegativeToPrecision(d Decimal, exponent uint64, precision uint, mode RoundingMode) (Decimal, error) {
+	coefficient, scale := decimalParts(d)
+	sign := 1
+	if coefficient.Sign() < 0 && exponent&1 != 0 {
+		sign = -1
+	}
+	magnitude := new(big.Int).Abs(coefficient)
+
+	maximumInt := ^uint(0) >> 1
+	guardDigits := uint(max(16, 2*bits.Len64(exponent)))
+	for {
+		if precision > maximumInt-guardDigits {
+			return Decimal{}, ErrRange
+		}
+		interval := powCoefficientInterval(magnitude, exponent, int(precision+guardDigits))
+		result, resultScale, resolved := roundNegativePowerInterval(interval, scale, exponent, precision, sign, mode)
+		if resolved {
+			return makeRoundedPowerResult(result, &resultScale, precision)
 		}
 		if guardDigits > maximumInt/2 {
 			return Decimal{}, ErrRange
@@ -225,6 +262,52 @@ func roundPowerInterval(interval *powerInterval, exponent uint64, precision uint
 	return lower, remove, true, nil
 }
 
+// If the positive coefficient power lies in [lower*10^e, upper*10^e],
+// its reciprocal lies between 10^-e/upper and 10^-e/lower. Choosing the
+// significant-digit scale before dividing cancels both e and the wide base
+// scale, leaving endpoint divisions bounded by the retained interval digits.
+func roundNegativePowerInterval(interval *powerInterval, scale Scale, exponent uint64, precision uint, sign int, mode RoundingMode) (big.Int, big.Int, bool) {
+	lowerDigits := decimalDigitCount(&interval.lower)
+	if lowerDigits != decimalDigitCount(&interval.upper) {
+		return big.Int{}, big.Int{}, false
+	}
+
+	shift := uint64(lowerDigits) + uint64(precision) - 1
+	lowerDenominator := &interval.upper
+	upperDenominator := &interval.lower
+	if sign < 0 {
+		lowerDenominator, upperDenominator = upperDenominator, lowerDenominator
+	}
+	lower := roundReciprocalPowerBound(lowerDenominator, shift, sign, mode)
+	upper := roundReciprocalPowerBound(upperDenominator, shift, sign, mode)
+	if lower.Cmp(&upper) != 0 {
+		return big.Int{}, big.Int{}, false
+	}
+
+	var resultScale, component, scaleProduct big.Int
+	resultScale.Set(&interval.exponent)
+	resultScale.Add(&resultScale, component.SetInt64(int64(lowerDigits)))
+	resultScale.Add(&resultScale, component.SetUint64(uint64(precision-1)))
+	scaleProduct.SetInt64(int64(scale))
+	scaleProduct.Mul(&scaleProduct, component.SetUint64(exponent))
+	resultScale.Sub(&resultScale, &scaleProduct)
+	return lower, resultScale, true
+}
+
+func roundReciprocalPowerBound(denominator *big.Int, shift uint64, sign int, mode RoundingMode) big.Int {
+	var numerator, quotient, remainder big.Int
+	setPowerOfTen(&numerator, shift)
+	quotient.QuoRem(&numerator, denominator, &remainder)
+	if sign < 0 {
+		quotient.Neg(&quotient)
+		remainder.Neg(&remainder)
+	}
+	if err := roundQuotient(&quotient, &remainder, denominator, mode); err != nil {
+		panic("decimal: exact mode reached bounded reciprocal power rounding")
+	}
+	return quotient
+}
+
 func roundPowerBound(bound, exponent, remove *big.Int, sign int, mode RoundingMode) big.Int {
 	var quotient, remainder, divisor, shift big.Int
 	comparison := exponent.Cmp(remove)
@@ -270,6 +353,10 @@ func makeRoundedPower(coefficient big.Int, scale Scale, exponent uint64, remove 
 	resultScale.SetInt64(int64(scale))
 	resultScale.Mul(&resultScale, multiplier.SetUint64(exponent))
 	resultScale.Sub(&resultScale, remove)
+	return makeRoundedPowerResult(coefficient, &resultScale, precision)
+}
+
+func makeRoundedPowerResult(coefficient big.Int, resultScale *big.Int, precision uint) (Decimal, error) {
 	digits := uint(decimalDigitCount(&coefficient))
 	if digits > precision {
 		var remainder big.Int
@@ -277,7 +364,7 @@ func makeRoundedPower(coefficient big.Int, scale Scale, exponent uint64, remove 
 		if remainder.Sign() != 0 {
 			panic("decimal: bounded power normalization was inexact")
 		}
-		resultScale.Sub(&resultScale, bigOne)
+		resultScale.Sub(resultScale, bigOne)
 		digits--
 	}
 	if digits > precision {
@@ -287,7 +374,7 @@ func makeRoundedPower(coefficient big.Int, scale Scale, exponent uint64, remove 
 	var minimumScale, shift big.Int
 	minimumScale.SetInt64(math.MinInt64)
 	if resultScale.Cmp(&minimumScale) < 0 {
-		shift.Sub(&minimumScale, &resultScale)
+		shift.Sub(&minimumScale, resultScale)
 		if !shift.IsUint64() || shift.Uint64() > uint64(precision-digits) {
 			return Decimal{}, ErrRange
 		}
@@ -295,7 +382,7 @@ func makeRoundedPower(coefficient big.Int, scale Scale, exponent uint64, remove 
 		resultScale.Set(&minimumScale)
 	}
 	var accumulatedScale scaleAccumulator
-	accumulatedScale.set(&resultScale)
+	accumulatedScale.set(resultScale)
 	target, err := accumulatedScale.fitRoundedCoefficient(&coefficient)
 	if err != nil {
 		return Decimal{}, err
